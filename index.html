@@ -20,17 +20,19 @@
   <meta property="og:url" content="https://dominic.balass.one/textheat/">
   <title>textheat — Give words a little color.</title>
   <link rel="icon" type="image/svg+xml" href="./favicon.svg">
-  <script type="module" crossorigin src="./assets/index-CZFTKkD3.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-CntTFJVt.css">
+  <script type="module" crossorigin src="./assets/index-DPV-XRQz.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-RuhOcOhG.css">
 </head>
 <body>
-  <div class="page">
-    <header class="topbar">
+  <header class="topbar">
+    <div class="page topbar-inner">
       <a class="brand" href="./" aria-label="textheat home"><span class="brand-icon">t<span>°</span></span>textheat</a>
-      <nav aria-label="Main"><a href="#extension-download">Extension</a><a href="#how-it-works">How it works <span>↗</span></a><a href="#privacy">Privacy</a><button id="theme-toggle" class="icon-button" aria-label="Switch to dark theme">☾</button></nav>
-    </header>
+      <nav aria-label="Main"><a href="#extension-download">Extension</a><a href="#how-it-works">How it works <span>↗</span></a><a href="#privacy">Privacy</a><button id="theme-toggle" class="icon-button" type="button" aria-label="Color theme: system preference (dark). Activate for dark theme." title="Color theme: system preference">◐</button></nav>
+    </div>
+  </header>
     <main>
       <section class="hero">
+        <div class="page hero-inner">
         <h1 id="hero-title" aria-label="Give emotional words a little color."><span class="hero-title-line" aria-hidden="true">Give <span id="hero-emotion" class="hero-emotion" style="background-color:#fdf5d9;color:#92400e"><span class="hero-emotion-text">happy</span></span> words</span><span class="hero-title-line" aria-hidden="true">a little <span class="color-word">color.<svg viewBox="0 0 210 14" aria-hidden="true"><path d="M3 10 Q100 -2 206 8"/></svg></span></span></h1>
         <p>A little clarity for the things we say. Find the feeling in your<br class="desktop-break"> text with a fast, private, self-contained highlighting engine.</p>
         <label class="hero-emoji-toggle" for="hero-emoji"><input id="hero-emoji" type="checkbox"> Try emoji reactions <span aria-hidden="true">✨</span></label>
@@ -39,7 +41,9 @@
           <a class="download-button" href="./downloads/textheat-chrome.zip" download="textheat-chrome.zip">Download for Chrome <span aria-hidden="true">↓</span></a>
           <a class="info-button" href="#extension-download">More info <span aria-hidden="true">↓</span></a>
         </div>
+        </div>
       </section>
+      <div class="page">
       <section class="workspace" aria-label="Interactive sentiment playground">
         <div class="workspace-heading"><div><span class="small-label">THE PLAYGROUND</span></div><span class="live-label"><span class="status-dot"></span> LIVE ANALYSIS</span></div>
         <div class="editor-panel">
@@ -120,8 +124,8 @@ text.<span class="code-method">heat</span>(<span class="code-string">"I love wha
           <p class="install-footnote">Your page text is never collected, transmitted, or stored by textheat. Only settings are stored locally.</p>
         </div>
       </section>
+      </div>
     </main>
-    <footer><span class="brand footer-brand">textheat<span class="footer-tagline">A little signal in the sentences.</span></span><span>English lexical baseline · Heuristic, not calibrated · MIT</span></footer>
-  </div>
+    <footer><div class="page footer-inner"><span class="brand footer-brand">textheat</span><span class="footer-credit">Created by <a href="https://dominic.balass.one/" target="_blank" rel="noopener noreferrer">Dominic Balassone</a></span><span class="footer-note">English lexical baseline · Heuristic, not calibrated · MIT</span></div></footer>
 </body>
 </html>

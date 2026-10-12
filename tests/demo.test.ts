@@ -25,6 +25,11 @@ afterEach(async () => {
 });
 
 describe('live browser demo attribution', () => {
+  it('demonstrates all seven palette categories in the initial editable example', () => {
+    const categories = new Set([...document.querySelectorAll<HTMLElement>('#output .textheat-highlight')].map(span => span.dataset.emotion ?? span.dataset.sentiment));
+    expect([...categories].sort()).toEqual(['positive', 'negative', 'joy', 'anger', 'sadness', 'fear', 'surprise'].sort());
+    expect(element('#output').textContent).toBe(element<HTMLTextAreaElement>('#input').value);
+  });
   it('loads every example and updates the playground without stale attribution', () => {
     const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-example]'));
     expect(buttons).toHaveLength(26);

@@ -156,7 +156,7 @@ describe('progressive extension controller', () => {
       expect(selection.toString()).toBe(selected); expect(selection.anchorNode).toBe(anchor);
       controller.configure({ ...settings, emojiReactions: true, theme: 'dark' });
       expect(host.shadowRoot!.querySelectorAll('.particle')).toHaveLength(0);
-      expect((host.shadowRoot!.querySelector('.badge') as HTMLElement).style.getPropertyValue('--reaction-bg')).toBe(spans[0]!.style.getPropertyValue('--textheat-bg'));
+      expect((host.shadowRoot!.querySelector('.badge') as HTMLElement).style.background).toBe('transparent');
       controller.configure({ ...settings, emojiReactions: true, threshold: .9 });
       expect(host.shadowRoot!.querySelectorAll('.badge')).toHaveLength(highlights().length);
       expect(host.shadowRoot!.querySelectorAll('.particle')).toHaveLength(0);

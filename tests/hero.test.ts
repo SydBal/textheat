@@ -21,7 +21,8 @@ describe('hero emotion demonstration', () => {
     toggle.checked = true; toggle.dispatchEvent(new Event('change'));
     const overlay = () => document.querySelector('.textheat-extension-reactions')?.shadowRoot;
     expect(overlay()?.querySelector('.badge')?.textContent).toBe('😊');
-    expect(overlay()?.querySelector<HTMLElement>('.badge')?.style.getPropertyValue('--reaction-bg')).toBe('transparent');
+    const badge = overlay()?.querySelector<HTMLElement>('.badge');
+    expect(badge?.style.background).toBe('transparent');
     expect(word.textContent).toBe('happy');
     vi.advanceTimersByTime(2860);
     expect(word.textContent).toBe('angry');

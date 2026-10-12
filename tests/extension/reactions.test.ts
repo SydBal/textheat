@@ -374,7 +374,7 @@ describe('isolated emoji reactions', () => {
     window.dispatchEvent(new Event('resize')); window.dispatchEvent(new Event('resize'));
     expect(vi.getTimerCount()).toBe(1); await vi.advanceTimersByTimeAsync(16);
     expect(layers()[0]!.style.left).toBe('260px'); expect(layers()[0]!.style.top).toBe('92px');
-    expect(badges()[0]!.style.getPropertyValue('--reaction-bg')).toBe('#123456');
+    expect(badges()[0]!.style.background).toBe('transparent');
     expect(source.style.position).toBe(''); expect(vi.getTimerCount()).toBe(0);
   });
   it('excludes offscreen, hidden, manual-panel and native-control highlights', () => {

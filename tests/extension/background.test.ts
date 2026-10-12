@@ -70,6 +70,34 @@ afterEach(async () => {
 });
 
 describe('background Chrome integration', () => {
+  it('commits the first Auto selection when permission is granted after the popup disappears', async () => {
+    const mock = await background('off');
+    // Send the user's intent, then simulate popup destruction: no subsequent SAVE_SETTINGS.
+    const respond = vi.fn();
+    mock.runtime.onMessage.listeners[0]!({ type: 'PREPARE_AUTO' }, { id: 'textheat-test' }, respond);
+    await flush();
+    expect(mock.data().settings.mode).toBe('off');
+    mock.permissions.getAll.mockResolvedValue({ origins: ['http://*/*', 'https://*/*'] });
+    mock.permissions.onAdded.listeners[0]!(); await flush();
+    expect(mock.data().settings.mode).toBe('auto');
+    expect(mock.scripting.registerContentScripts).toHaveBeenCalled();
+  });
+  it.each(['cancel', 'new-mode', 'expired', 'unrequested', 'partial'] as const)('does not silently enable Auto for %s permission grants', async scenario => {
+    const mock = await background('manual');
+    if (scenario !== 'unrequested') expect((await mock.message({ type: 'PREPARE_AUTO' })).ok).toBe(true);
+    if (scenario === 'cancel') await mock.message({ type: 'CANCEL_AUTO' });
+    if (scenario === 'new-mode') await mock.message({ type: 'SAVE_SETTINGS', settings: { mode: 'off' } });
+    if (scenario === 'expired') vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 120001);
+    mock.permissions.getAll.mockResolvedValue({ origins: scenario === 'partial' ? ['https://example.com/*'] : ['http://*/*', 'https://*/*'] });
+    mock.permissions.onAdded.listeners[0]!(); await flush();
+    expect(mock.data().settings.mode).toBe(scenario === 'new-mode' ? 'off' : 'manual');
+  });
+  it('prevents content scripts from arming or cancelling an Auto intent', async () => {
+    const mock = await background();
+    for (const type of ['PREPARE_AUTO', 'CANCEL_AUTO'] as const) {
+      expect(await mock.message({ type }, { id: 'textheat-test', url: 'https://example.com/', tab: { id: 7 } as chrome.tabs.Tab })).toEqual({ ok: false, error: 'Not authorized' });
+    }
+  });
   it('reconciles immediately and switching Off unregisters Auto and stops existing pages without injection', async () => {
     const mock = await background('auto', ['https://example.com/*']);
     expect(mock.permissions.getAll).toHaveBeenCalledTimes(1);

@@ -9,8 +9,8 @@ The default engine is a fast, local **English dictionary-and-rules algorithm**. 
 ```mermaid
 flowchart TD
     A[Original text] --> B[Tokenize with exact offsets]
-    B --> C[Find longest recognized word or phrase]
-    C --> D[Apply phrase composition and contextual rules]
+    B --> C[Recognize curated noun frame or longest lexical match]
+    C --> D[Keep exact starting phrases first; apply contextual rules]
     D --> E[Assign polarity and optional emotion]
     E --> F[Calculate importance and correctness estimate]
     F --> G{Pass highlight filters?}
@@ -49,17 +49,36 @@ Examples of actual base scores:
 | not bad | 0.9 | None |
 | crashes constantly | -3.0 | None |
 
-The merged dictionary contains **5,642 unique entries: 1,637 words and 4,005 phrases**, with a derived maximum phrase length of **12 words**. Its vocabulary and scores are originally authored, not imported from an external corpus, third-party dictionary, or training dataset. The domain additions include constrained review-template combinations such as “the SUBJECT was PREDICATE”: subjects and predicates are combined only within authored compatibility families, not an unrestricted adjective/noun product. Template counts describe exact recognized keys, not measured accuracy or general sentence understanding. Spelling variants and inflections are explicit entries, not stemming.
+The merged dictionary contains **5,981 unique entries: 1,850 words and 4,131 phrases**, with a derived maximum phrase length of **12 words**. The latest review layer contributes **339 individually authored keys: 213 words and 126 phrases**, with **no template generation in this layer**. Its vocabulary and scores are original, not imported from an external corpus, third-party dictionary, or training dataset. Earlier domain additions include constrained review-template combinations such as “the SUBJECT was PREDICATE”: subjects and predicates are combined only within authored compatibility families, not an unrestricted adjective/noun product. Template counts describe exact recognized keys, not measured accuracy or general sentence understanding. Spelling variants and inflections are explicit entries, not stemming.
 
-Merge precedence is **original compact baseline > earlier expansion > domain additions** for duplicate keys; the 1,392 legacy entries retain their scores and emotions. The frozen public `lexiconStats` object reports `{ entries, words, phrases, maxPhraseWords }` from the merged keys, not source-row counts or estimated coverage. It is exported from the root, core, and browser entry points; see [lexicon statistics](API.md#lexicon-statistics).
+Merge precedence is **original compact baseline > earlier expansion > domain additions > latest review additions** for duplicate keys; the 1,392 legacy entries retain their scores and emotions. The frozen public `lexiconStats` object reports `{ entries: 5981, words: 1850, phrases: 4131, maxPhraseWords: 12 }` from the merged keys, not source-row counts or estimated coverage. It is exported from the root, core, and browser entry points; see [lexicon statistics](API.md#lexicon-statistics).
 
-The matcher chooses the longest recognized match first. Phrase words must be separated by spaces or tabs rather than punctuation, newlines, or hyphens. Matched words are consumed together, preventing nested highlights for a phrase and its component words. Internal negators, degree words, and modal words keep the phrase's authored reading; they are not separately rescored. For example, “the purchase was not worth the asking price” is one authored negative phrase, not a positive phrase reversed by its internal “not.” A preceding external “not” can still reverse it. The token **like** is skipped unless its immediately preceding normalized token is **i, we, you, or they**, avoiding comparative “looks like” evidence; this narrow exception is not full grammatical analysis.
+The matcher recognizes curated bounded noun frames before individual lexical terms, but **existing exact multiword phrases at the frame's starting token retain precedence**. When no noun frame applies, it chooses the longest recognized lexical match. Phrase/frame words must be separated by spaces or tabs rather than punctuation, newlines, or hyphens. Matched words are consumed together, preventing nested highlights for a phrase and its component words. A recognized negative noun frame therefore does not paint a subjective descriptor independently green inside negative problems. Internal negators, degree words, and modal words of dictionary phrases keep the phrase's authored reading; they are not separately rescored. For example, “the purchase was not worth the asking price” is one authored negative phrase, not a positive phrase reversed by its internal “not.” A preceding external “not” can still reverse it. The token **like** is skipped unless its immediately preceding normalized token is **i, we, you, or they**, avoiding comparative “looks like” evidence; this narrow exception is not full grammatical analysis.
 
 Unrecognized words do not generate evidence just because they sound unusual or appear in a negative sentence. For example, an unfamiliar adjective may produce no highlight even when a human understands the opinion.
 
 ## 3. Adjust the evidence using nearby context
 
 The [contextual scorer](../src/core/sentiment.ts) applies bounded rules, not full grammatical understanding.
+
+### Curated noun-head frames
+
+The [noun-context recognizer](../src/core/noun-context.ts) handles **PREFIX VERB [any/a/no] [0–3 DESCRIPTORS] HEAD** as one negated-observation span. The lists are closed:
+
+- **Prefixes:** don't, doesn't, didn't, can't, cannot, couldn't, won't, wouldn't, shouldn't, haven't, hasn't, not, never, dont. Curly apostrophes normalize to the same contractions.
+- **Verbs:** see, find, notice, detect, encounter, experience, have.
+- **Descriptors:** functional, technical, major, minor, serious, recurring, performance, usability, operational, structural, critical, intermittent, persistent, significant, severe, unexpected, known, potential, practical.
+- **Heads:** problem/problems, issue/issues, bug/bugs, error/errors, defect/defects, flaw/flaws, glitch/glitches, delay/delays, failure/failures, crash/crashes.
+
+Zero descriptors are allowed in an observation; the determiner is optional and limited to **any, a, no**. Recognition cannot cross punctuation, newlines, conjunctions, an unknown descriptor, or a fourth descriptor. Spaces and tabs are allowed, and original UTF-16 offsets and spelling are preserved. An exact dictionary phrase at the starting token (for example, “no problem”) still wins with its original score.
+
+The negative head controls polarity. If it has a negative standalone lexeme, use that; otherwise the frame-only fallback scores are **problem -1.7, issue -2, bug -2.5, error -1.5, defect/flaw/glitch -2, delay -1.5, failure -2.5, crash -2.4**, with the same fallback for each plural. These fallbacks do **not** add head aliases or standalone lexemes to the dictionary, and the frame itself is not a generated dictionary entry.
+
+For observations, multiply the head score by **-0.8**, with **no 1.15 descriptor multiplier**. An additional internal **no** multiplies by **-0.7**; odd external negation later multiplies by **-0.7** once. Thus “dont see any functional problems” yields $-1.7 \times -0.8 = +1.36$, while “don't see no functional problems” yields $1.36 \times -0.7 = -0.952$. External degree and contrast modifiers still apply once.
+
+Outside observations, **1–3 DESCRIPTORS HEAD** and **no [0–3 DESCRIPTORS] HEAD** are bounded noun compositions. Descriptors multiply the head score by **1.15**; explicit **no** then multiplies by **-0.7**. “Functional problems” is one negative span with $-1.7 \times 1.15 = -1.955$, not a green adjective beside a fault. “No functional problems” yields $-1.955 \times -0.7 = +1.3685$. Descriptorless “no problems” is also eligible, unless an exact starting phrase takes precedence.
+
+The rules are `contextual-noun-head` plus `negative-noun-observation` or `negative-noun-composition`; negated observations also record `absence-of-negative` and `negation-scope`. Missing-apostrophe **dont** is recognized only as a complete observation-frame prefix (`observation-negator-spelling`), not a global negator: “dont useful” does not reverse useful. The specific typo **funcitonal** is accepted only as a descriptor inside a complete observation (`observation-descriptor-typo`), not in “funcitonal problems” or “no funcitonal problems.” There is **no general fuzzy spelling correction**, stemming, or grammatical parser.
 
 ### Phrase composition
 
@@ -147,7 +166,7 @@ After adjustments, signed scores are clamped to **[-4, 4]**. Positive scores pro
 
 ### Scoring precedence
 
-In order: **longest lexical match → negative-noun composition → degree and contrast multiplication → listed absence/lack reversal → listed less/more scaling → odd external negation → narrow degree ambiguity checks → exclamation and capitalization emphasis → clamp**. Hypothetical cues are checked separately before the modifier scan; they change correctness/abstention, not the signed score. Emotion comes from the selected lexical entry or composed noun, but any ordinary negation, absence, or lack reversal removes it, even if two reversals restore positive polarity.
+In order: **curated noun-frame recognition (exact starting dictionary phrases retain precedence), otherwise longest lexical match → legacy negative-noun composition → degree and contrast multiplication → noun-frame scaling → listed absence/lack reversal → listed less/more scaling → odd external negation → narrow degree ambiguity checks → exclamation and capitalization emphasis → clamp**. Hypothetical cues are checked separately before the modifier scan; they change correctness/abstention, not the signed score. Emotion comes from the selected lexical entry or composed noun, but any ordinary negation, contextual noun-frame negation, absence, or lack reversal removes it, even if two reversals restore positive polarity.
 
 ## 4. Handle uncertainty separately from strength
 
@@ -156,13 +175,13 @@ The engine assigns a hand-defined **heuristic correctness estimate**:
 | Situation | Heuristic estimate |
 | --- | ---: |
 | Ambiguity cue present | 0.44 |
-| Ordinary scoped negation, listed absence, or listed lack | 0.64 |
+| Ordinary scoped negation, negated noun frame, listed absence, or listed lack | 0.64 |
 | Multiword match or composed phrase, otherwise | 0.86 |
 | Single-word match, otherwise | 0.78 |
 
 Ambiguity cues include:
 
-- A bounded preceding hedge or hypothetical cue: **maybe, perhaps, might, may, could, possibly, apparently, seems, seem, if, unless, would** (`hypothetical-scope`). This independent backward scan examines at most **eight tokens** within the current scope, stopping at non-word tokens, contrasts, or `and`/`or`/`because`. Unlike the modifier/negation scan, it can look past earlier evidence in the same scope. `if`/`unless` establish a new scope and can themselves be the cue; cues inside a matched dictionary phrase are not reinterpreted.
+- A bounded preceding hedge or hypothetical cue: **maybe, perhaps, might, may, could, possibly, apparently, seems, seem, if, unless, would** (`hypothetical-scope`). This independent backward scan examines at most **eight tokens** within the current scope, stopping at non-word tokens, contrasts, or `and`/`or`/`because`. Unlike the modifier/negation scan, it can look past earlier evidence in the same scope. `if`/`unless` establish a new scope and can themselves be the cue; cues inside a matched dictionary phrase are not reinterpreted. Observation frames include their starting prefix in this check; **couldn't/wouldn't/shouldn't** also mark the observation hypothetical.
 - The listed excess-to or negated-enough degree frames above.
 - A question mark within a bounded forward clause window.
 - A narrow possible-irony pattern: positive praise near “another” or “again” and a recognized negative event, as in **“Great, another crash.”**
@@ -246,10 +265,18 @@ These examples assume the default light theme, threshold 0.30, minimum correctne
 | frustrating | -2.80 | 0.78 | Yes: anger orange, not negative red |
 | absolutely beautiful | 4.00, after clamping | 1.00 | Yes: positive green |
 | great disappointment | -3.22 | 0.885 | Yes: sadness blue |
+| functional problems | -1.955 | 0.48875 | Yes: one negative red span, not a separate green adjective |
+| dont see any functional problems | +1.36 | 0.34 | Yes: full-span positive green; correctness 0.64, no emotion |
+| no functional problems | +1.3685 | 0.342125 | Yes: positive green; correctness 0.64 |
+| don't see no functional problems | -0.952 | 0.238 | No: negative evidence below importance threshold |
+| don't think there are no problems | -0.833 | 0.20825 | No: negative evidence below importance threshold |
+| don't think there are no functional problems | -0.95795 | 0.2394875 | No: negative evidence below importance threshold |
 | maybe good | 1.80 | 0.45 | No: ambiguity estimate 0.44 fails the correctness cutoff |
 | unfamiliar factual words | No candidate | Not calculated | No highlight |
 
 In **“The interface is beautiful, but the app crashes constantly,”** the engine highlights “beautiful” positively and “crashes constantly” negatively. Aspect attribution associates them with interface and app respectively, but these target nouns are not automatically colored.
+
+The [noun-context regressions](../tests/noun-context.test.ts) verify the observation and double-negation cases above against actual source outputs. In “I dont see any functional problems.” the highlighted slice is exactly **“dont see any functional problems”**, not the subject or punctuation; `confidence` remains null. External negation in “don't think there are no problems” gives $-1.7 \times -0.7 \times -0.7 = -0.833$; descriptors add 1.15 in its “no functional problems” variant. These negative scores remain clause evidence even when they do not qualify for display—none becomes falsely green. “If I dont see any functional problems.” and “I dont see any functional problems?” retain **+1.36 / 0.34**, but correctness **0.44** causes default abstention. This is bounded heuristic behavior, not a general interpretation of double negatives, questions, or conditionals.
 
 ## 9. What attribution does—and does not—change
 
@@ -272,7 +299,7 @@ The extension calls the same public analyzer on eligible text nodes. Its modes d
 - Auto: progressive processing near the viewport, then once-only visibility animation.
 - Manual: explicitly activated page processing or a text-check panel.
 
-The extension does not use different sentiment scores. Its animation reveals an already-decided color; animation timing is not an emotional measurement. Because analysis is per text node, phrases split across separate HTML elements can lose shared context. See [extension limitations](EXTENSION.md).
+The extension does not use different sentiment scores. Its animation reveals an already-decided color; animation timing is not an emotional measurement. Because analysis is per text node, dictionary phrases and curated noun/observation frames split across separate HTML elements can lose shared context. There is no cross-node grammatical parser. See [extension limitations](EXTENSION.md).
 
 The optional browser-native adapter in the library/demo supplies an **independent second opinion** when requested and available. It does not silently overwrite local highlights or invent model confidence. The extension currently uses the local engine only.
 

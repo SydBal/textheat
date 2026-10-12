@@ -6,6 +6,8 @@ import { readStored, writeStored } from '../shared/storage';
 const AUTO_SCRIPT = 'textheat-auto';
 const SCRIPT = 'content/content.js';
 const STYLES = 'content/styles.css';
+// Short-lived UI intent, not a preference: a permission prompt can close its popup.
+let autoIntentUntil = 0;
 // Serialize read/modify/write AND reconciliation, including permission events.
 let pending: Promise<unknown> = Promise.resolve();
 function serialize<T>(job: () => Promise<T>): Promise<T> {
@@ -141,7 +143,7 @@ async function handle(message: ExtensionMessage): Promise<ExtensionResponse> {
 }
 
 chrome.runtime.onMessage.addListener((message: ExtensionMessage, sender, respond) => {
-  if (!message || !['GET_SETTINGS', 'SAVE_SETTINGS', 'SAVE_SITE'].includes(message.type)) return false;
+  if (!message || !['GET_SETTINGS', 'SAVE_SETTINGS', 'SAVE_SITE', 'PREPARE_AUTO', 'CANCEL_AUTO'].includes(message.type)) return false;
   // Content scripts may bootstrap settings, but only extension UI may mutate them.
   // An options page opened as a full tab also has sender.tab. Authenticate its
   // browser-provided document URL rather than treating all tab senders as websites.
@@ -155,6 +157,17 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, sender, respond
     respond({ ok: false, error: 'Not authorized' });
     return false;
   }
+  if (message.type === 'PREPARE_AUTO') {
+    autoIntentUntil = Date.now() + 120000;
+    respond({ ok: true });
+    return false;
+  }
+  if (message.type === 'CANCEL_AUTO') {
+    autoIntentUntil = 0;
+    respond({ ok: true });
+    return false;
+  }
+  if (message.type === 'SAVE_SETTINGS' && message.settings?.mode !== undefined) autoIntentUntil = 0;
   if (message.type === 'GET_SETTINGS') {
     // Never wait behind injection: a freshly injected controller may need this
     // bootstrap response before executeScript can finish. Only mutations need
@@ -191,7 +204,18 @@ function refresh(): void {
 }
 chrome.runtime.onInstalled.addListener(refresh);
 chrome.runtime.onStartup.addListener(refresh);
-chrome.permissions.onAdded.addListener(refresh);
+chrome.permissions.onAdded.addListener(() => {
+  void serialize(async () => {
+    const intent = autoIntentUntil;
+    const permissions = intent > Date.now() ? await chrome.permissions.getAll() : undefined;
+    const origins = permissions?.origins ?? [];
+    if (intent && intent === autoIntentUntil && intent > Date.now()
+      && (origins.includes('<all_urls>') || origins.includes('http://*/*') && origins.includes('https://*/*'))) {
+      autoIntentUntil = 0;
+      await handle({ type: 'SAVE_SETTINGS', settings: { mode: 'auto' } });
+    } else await reconcile(await readStored());
+  }).catch(() => undefined);
+});
 chrome.permissions.onRemoved.addListener(refresh);
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && (changes.settings || changes.sites)) refresh();

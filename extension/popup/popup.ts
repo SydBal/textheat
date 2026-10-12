@@ -12,6 +12,9 @@ let tabId: number | undefined;
 let hostname = '';
 let supported = false;
 let busy = true;
+let closed = false;
+let stateRevision = 0;
+let stateTimer: number | undefined;
 const modes = [...document.querySelectorAll<HTMLInputElement>('input[name="mode"]')];
 const feedback = element('feedback');
 const status = element('page-status');
@@ -24,6 +27,7 @@ async function request(message: ExtensionMessage): Promise<ExtensionResponse> {
 
 function lock(value: boolean): void {
   busy = value;
+  document.querySelector('main')?.setAttribute('aria-busy', String(value));
   for (const control of document.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLButtonElement>('main input, main select, main button')) control.disabled = value;
   element<HTMLInputElement>('site-enabled').disabled = value || !supported;
   for (const id of ['toggle-page', 'pick-text', 'check-selection', 'clear-page']) {
@@ -50,24 +54,45 @@ function render(): void {
 }
 
 async function refreshState(): Promise<void> {
+  const revision = ++stateRevision;
   if (!supported || tabId === undefined) {
     status.textContent = 'This page cannot be accessed. Open a normal HTTP or HTTPS webpage.';
     return;
   }
   const settings = effectiveSettings(stored, hostname);
   try {
-    const result: ExtensionResponse = await chrome.tabs.sendMessage(tabId, { type: 'GET_STATE' });
+    const result: ExtensionResponse = await chrome.tabs.sendMessage(tabId, { type: 'GET_STATE' }, { frameId: 0 });
+    if (closed || revision !== stateRevision) return;
     if (!result?.ok || !result.state) throw new Error('No controller');
     const state = result.state;
-    status.textContent = state.mode === 'off' ? 'Off — no active highlighting.' : state.picking
-      ? 'Click a block of text on the page to check it. Escape cancels.'
+    const next = state.mode === 'off' ? 'Off — no active highlighting.' : state.picking
+      ? `${state.highlights} highlights · Click text to check it. Escape cancels.`
       : `${state.highlights} highlights · ${state.processed} processed${state.pageEnabled ? ' · page on' : ' · page off'}`;
+    if (status.textContent !== next) status.textContent = next;
   } catch {
-    status.textContent = settings.mode === 'off' ? 'Off — no page access needed.' : settings.mode === 'manual'
+    if (closed || revision !== stateRevision) return;
+    const next = settings.mode === 'off' ? 'Off — no page access needed.' : settings.mode === 'manual'
       ? 'Ready when you are. Choose a Manual tool to access this page.'
       : 'No page connection. This may be a protected page; try reloading a permitted site.';
+    if (status.textContent !== next) status.textContent = next;
   }
 }
+
+function scheduleStateRefresh(): void {
+  if (closed || !supported || tabId === undefined) return;
+  // Only while this popup exists. Await each sample: no overlapping polling,
+  // no page injection, analysis, settings writes, or background timer.
+  stateTimer = window.setTimeout(async () => {
+    stateTimer = undefined;
+    if (closed) return;
+    try { if (!busy) await refreshState(); }
+    finally { scheduleStateRefresh(); }
+  }, 500);
+}
+window.addEventListener('pagehide', () => {
+  closed = true; stateRevision++;
+  if (stateTimer !== undefined) window.clearTimeout(stateTimer);
+}, { once: true });
 
 async function save(message: ExtensionMessage): Promise<void> {
   const response = await request(message);
@@ -79,6 +104,7 @@ async function save(message: ExtensionMessage): Promise<void> {
 
 async function work(job: () => Promise<void>): Promise<void> {
   if (busy) return;
+  stateRevision++; // Ignore a pre-save count response that arrives afterward.
   lock(true);
   feedback.textContent = '';
   try { await job(); }
@@ -89,12 +115,24 @@ async function work(job: () => Promise<void>): Promise<void> {
 for (const radio of modes) radio.addEventListener('change', () => {
   if (!radio.checked || busy) return;
   const mode = radio.value as Mode;
+  // Send the explicit intent BEFORE the dialog: its focus change can destroy
+  // this popup and its awaited continuation. The worker finishes on onAdded.
+  const prepared = mode === 'auto' ? request({ type: 'PREPARE_AUTO' }) : Promise.resolve({ ok: true });
+  // Attach a handler immediately so a closed popup does not leave a rejection.
+  void prepared.catch(() => undefined);
   // Request immediately inside the click/change gesture, before any awaited work.
   const permission = mode === 'auto'
     ? chrome.permissions.request({ origins: ['http://*/*', 'https://*/*'] })
     : Promise.resolve(true);
   void work(async () => {
-    if (!await permission) {
+    let granted: boolean;
+    try { granted = await permission; await prepared; }
+    catch (error) {
+      if (mode === 'auto') await request({ type: 'CANCEL_AUTO' }).catch(() => undefined);
+      throw error;
+    }
+    if (!granted) {
+      await request({ type: 'CANCEL_AUTO' });
       feedback.textContent = 'Website access was not granted. Your previous mode is unchanged.';
       return;
     }
@@ -172,6 +210,7 @@ async function initialize(): Promise<void> {
     render();
     await refreshState();
     lock(false);
+    scheduleStateRefresh();
   } catch (error) {
     status.textContent = 'Could not load extension settings.';
     feedback.textContent = error instanceof Error ? error.message : 'Reopen the popup to try again.';

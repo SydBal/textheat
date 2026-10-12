@@ -22,11 +22,11 @@ describe('original domain vocabulary and local opinion phrases', () => {
       phrases: mergedKeys.length - words,
       maxPhraseWords: Math.max(...mergedKeys.map(key => key.split(' ').length))
     });
-    expect(lexiconStats).toEqual({ entries: 5642, words: 1637, phrases: 4005, maxPhraseWords: 12 });
+    expect(lexiconStats).toEqual({ entries: 5981, words: 1850, phrases: 4131, maxPhraseWords: 12 });
     expect(keys).toHaveLength(4250);
     expect(keys.filter(key => !key.includes(' '))).toHaveLength(536);
     expect(keys.filter(key => key.includes(' '))).toHaveLength(3714);
-    expect(lexiconStats.entries).toBeGreaterThanOrEqual(4000);
+    expect(lexiconStats.entries).toBeGreaterThanOrEqual(5642 + 200);
     expect(lexiconStats.phrases).toBeGreaterThanOrEqual(700);
     expect(maxPhraseWords).toBeLessThanOrEqual(12);
     expect(Object.isFrozen(lexiconStats)).toBe(true);

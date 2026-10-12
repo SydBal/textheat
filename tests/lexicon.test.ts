@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { analyze, scoreSentiment, tokenize } from '../src/api/index';
 import { expandedEntries } from '../src/core/lexicon-expanded';
+import { reviewEntries } from '../src/core/lexicon-reviews';
 import { lexicon, lexiconStats, maxPhraseWords } from '../src/core/lexicon';
 
 const score = (text: string) => scoreSentiment(tokenize(text), { text });
@@ -12,7 +13,7 @@ describe('original expanded English lexicon', () => {
     expect(keys).toHaveLength(1326);
     expect(new Set(keys).size).toBe(keys.length);
     expect(keys.filter(key => key.includes(' '))).toHaveLength(280);
-    expect(lexicon.size).toBeGreaterThanOrEqual(4000);
+    expect(lexicon.size).toBeGreaterThanOrEqual(5642 + 200);
     expect(lexiconStats.phrases).toBeGreaterThanOrEqual(700);
   });
 
@@ -39,6 +40,17 @@ describe('original expanded English lexicon', () => {
     // merely examples or comparisons against the currently edited source data.
     expect(createHash('sha256').update(JSON.stringify(legacyValues)).digest('hex'))
       .toBe('a21b38d59e4bc8106391a2fca05fe72fc0145a8cce201fc2576d581b370e7e07');
+  });
+
+  it('preserves every one of the 5642 pre-review keys, scores and emotions', () => {
+    const additionKeys = new Set(reviewEntries.map(([key]) => key));
+    const oldValues = [...lexicon].filter(([key]) => !additionKeys.has(key))
+      .sort(([a], [b]) => a.localeCompare(b, 'en'));
+    expect(oldValues).toHaveLength(5642);
+    // Captured before the review layer existed: all domain, expansion and
+    // baseline values, including their original merge precedence.
+    expect(createHash('sha256').update(JSON.stringify(oldValues)).digest('hex'))
+      .toBe('02d23153cc55ced117b96f247d2314b02c9d4c93e601b124001e3147f0fa4056');
   });
 
   it('uses normalized, tokenizer-compatible keys and finite conservative scores', () => {

@@ -1,5 +1,6 @@
 import { contrasts, intensifiers, lexicon, negators } from './lexicon';
 import { tokenize as tokenizeForClauses } from './tokenize';
+import { contextualNegativeHeads, nounDescriptors, observationVerbs } from './noun-context';
 import type { Aspect, Clause, Label, PartOfSpeech, Prediction, TaggedToken, Token } from './types';
 
 const pronouns = new Set(['i', 'you', 'he', 'she', 'it', 'we', 'they', 'this', 'that', 'what', 'who', 'something', "i'm", "i've", "you're", "we're", "they're", "he's", "she's", "it's"]);
@@ -21,9 +22,10 @@ export function tagTokens(tokens: Token[]): TaggedToken[] {
     else if (determiners.has(word)) pos = 'determiner';
     else if (contrasts.has(word) || ['and', 'or', 'because', 'if', 'when', 'unless'].includes(word)) pos = 'conjunction';
     else if (prepositions.has(word)) pos = 'preposition';
-    else if (verbs.has(word) || emotionalVerbs.has(word) || negators.has(word) && word !== 'not' && word !== 'never') pos = 'verb';
+    else if (verbs.has(word) || observationVerbs.has(word) || emotionalVerbs.has(word) || negators.has(word) && word !== 'not' && word !== 'never') pos = 'verb';
     else if (intensifiers.has(word) || adverbs.has(word) || /ly$/u.test(word) && !lexicon.has(word)) pos = 'adverb';
-    else if (emotionalNouns.has(word)) pos = 'noun';
+    else if (emotionalNouns.has(word) || contextualNegativeHeads.has(word)) pos = 'noun';
+    else if (nounDescriptors.has(word)) pos = 'adjective';
     else if (lexicon.has(word) || ['new', 'old', 'customer', 'emotional'].includes(word) || /(?:ful|less|ous|ive|able|ible)$/u.test(word)) pos = word === 'customer' ? 'noun' : 'adjective';
     else if (/^[\p{L}\p{M}]+$/u.test(word)) pos = 'noun';
     return { ...token, pos };
@@ -129,7 +131,8 @@ export function analyzeContext(text: string, tokens: Token[], evidence: Predicti
         if (opinionVerbs.has(tagged[j]!.normalized)) { opinion = true; break; }
       }
       // Negation spans can include their subject: "don't think the interface is good".
-      const absenceFrame = p.rules?.some(rule => rule === 'absence-of-negative' || rule === 'lack-of-positive');
+      const absenceFrame = p.rules?.some(rule => rule === 'absence-of-negative' || rule === 'lack-of-positive'
+        || rule === 'negative-noun-observation' || rule === 'negative-noun-composition');
       for (let j = tokenIndex; !opinion && !absenceFrame && j < Math.min(tagged.length, tokenIndex + 16); j++) {
         const t = tagged[j]!;
         if (t.end > p.end) break;

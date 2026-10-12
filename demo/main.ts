@@ -35,7 +35,7 @@ const examples: Record<string, string> = {
   unicode: '🧡 I love the café’s beautiful design! The delivery was awful. 😞',
   safety: 'I love this <b>product</b>, but the service is terrible. <img src=x onerror=alert(1)>',
   coverage: 'The onboarding feels like wading through wet cement. The dashboard is zorbastic.',
-  absence: 'The release is free of bugs. The checkout is without delays, but the help desk lacks support.',
+  absence: "I dont see any functional problems. The release is free of bugs, but the help desk lacks support.",
   qualifiers: 'The navigation is more intuitive. The interface is not just good; it is excellent.',
   conditions: 'If the update is reliable, we will install it. The dashboard would be useful. The checkout is not reliable enough.',
   targets: 'The interface and navigation are intuitive. I love the customer support team.',

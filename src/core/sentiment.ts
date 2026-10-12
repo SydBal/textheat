@@ -1,4 +1,5 @@
 import { contrasts, intensifiers, lexicon, maxPhraseWords, negators } from './lexicon';
+import { recognizeNounContext } from './noun-context';
 import type { Prediction, ScoringContext, Token } from './types';
 
 const clamp = (n: number, max: number) => Math.max(-max, Math.min(max, n));
@@ -10,7 +11,9 @@ const absentNegativeHeads = new Map([['bugs', 'buggy'], ['errors', 'error'], ['p
 const lackingPositiveHeads = new Map([['support', 'helpful'], ['reliability', 'reliability']]);
 const comparedQualities = new Set(['useful', 'reliable', 'helpful', 'efficient', 'responsive', 'intuitive', 'usable']);
 const excessQualities = new Set(['slow', 'fast', 'difficult', 'easy', 'reliable', 'useful', 'expensive', 'complicated']);
-/** Longest lexical match first; modifiers stop at punctuation and clause boundaries. */
+/** Bounded noun frames before lexical terms; exact phrases retain precedence.
+ * Modifiers stop at punctuation and clause boundaries.
+ */
 export function scoreSentiment(tokens: Token[], context: ScoringContext = {}): Prediction[] {
   const predictions: Prediction[] = [];
   let clauseStart = 0;
@@ -39,9 +42,10 @@ export function scoreSentiment(tokens: Token[], context: ScoringContext = {}): P
       : -1;
     // Avoid reading comparative "like" as emotional, and "not only good" as negation.
     if (token.normalized === 'like' && !['i', 'we', 'you', 'they'].includes(tokens[i - 1]?.normalized ?? '')) continue;
-    let length = 0;
-    let entry;
-    for (let size = Math.min(maxPhraseWords, tokens.length - i); size > 0; size--) {
+    const nounContext = recognizeNounContext(tokens, i, context.text);
+    let length = nounContext?.length ?? 0;
+    let entry = nounContext?.entry;
+    for (let size = Math.min(maxPhraseWords, tokens.length - i); !nounContext && size > 0; size--) {
       const sequence = tokens.slice(i, i + size);
       if (sequence.some(t => t.kind !== 'word')) continue;
       if (context.text && sequence.some((t, j) => j > 0 && !/^[ \t]+$/u.test(context.text!.slice(sequence[j - 1]!.end, t.start)))) continue;
@@ -53,12 +57,24 @@ export function scoreSentiment(tokens: Token[], context: ScoringContext = {}): P
       length = 1;
     }
     if (!entry) continue;
-    const rules: string[] = [length > 1 ? 'lexical-phrase' : 'lexical-term'];
+    const rules: string[] = [nounContext ? 'contextual-noun-head' : length > 1 ? 'lexical-phrase' : 'lexical-term'];
     const ambiguity: string[] = [];
     const explanations: string[] = [];
+    if (nounContext) {
+      rules.push(nounContext.observation ? 'negative-noun-observation' : 'negative-noun-composition');
+      explanations.push('bounded curated descriptors take polarity from the negative noun head, not the adjective');
+      if (nounContext.typo) {
+        rules.push('observation-descriptor-typo');
+        explanations.push('funcitonal is functional only inside this complete observation frame; no fuzzy lexical matching');
+      }
+      if (token.normalized === 'dont') {
+        rules.push('observation-negator-spelling');
+        explanations.push('missing-apostrophe dont is a negator only in this complete observation frame');
+      }
+    }
     // The emotional head controls polarity in "great disappointment", not the positive adjective.
     const head = tokens[i + length];
-    if (entry.score > 0 && head && negativeHeads.has(head.normalized) && (lexicon.get(head.normalized)?.score ?? 0) < 0
+    if (!nounContext && entry.score > 0 && head && negativeHeads.has(head.normalized) && (lexicon.get(head.normalized)?.score ?? 0) < 0
       && (!context.text || /^[ \t]+$/u.test(context.text.slice(tokens[i + length - 1]!.end, head.start)))) {
       entry = { ...lexicon.get(head.normalized)!, score: lexicon.get(head.normalized)!.score * 1.15 };
       length++; rules.push('negative-noun-composition');
@@ -69,10 +85,11 @@ export function scoreSentiment(tokens: Token[], context: ScoringContext = {}): P
     let negationStart = -1;
     // Modal/conditional cues are independent of the previous lexical evidence, but stay
     // inside the same bounded clause. Internal words of dictionary phrases remain intact.
-    for (let j = i - 1; j >= Math.max(clauseStart, i - 8); j--) {
+    for (let j = nounContext?.observation ? i : i - 1; j >= Math.max(clauseStart, i - 8); j--) {
       const t = tokens[j]!;
       if (t.kind !== 'word' || contrasts.has(t.normalized) || ['and', 'or', 'because'].includes(t.normalized)) break;
-      if (hedges.has(t.normalized) || ['if', 'unless', 'would'].includes(t.normalized)) {
+      if (hedges.has(t.normalized) || ['if', 'unless', 'would'].includes(t.normalized)
+        || j === i && nounContext?.observation && ["couldn't", "wouldn't", "shouldn't"].includes(t.normalized)) {
         ambiguity.push('Hedged or hypothetical opinion');
         rules.push('hypothetical-scope');
         explanations.push('bounded preceding modal or conditional cue; not an asserted outcome');
@@ -100,6 +117,24 @@ export function scoreSentiment(tokens: Token[], context: ScoringContext = {}): P
     }
     if (negationStart >= 0) startIndex = Math.min(startIndex, negationStart);
     let score = entry.score * modifier * contrastWeight;
+    if (nounContext) {
+      // Observation absence uses -0.8: problem -1.7 -> +1.36 / 4 = .34,
+      // above the default .3 threshold. Legacy aliases retain their -0.7.
+      if (nounContext.observation) {
+        score *= -0.8;
+        rules.push('absence-of-negative');
+        explanations.push('negated observation of a listed negative head, scaled by -0.8 (problem importance 0.34)');
+        if (nounContext.negations > 1) {
+          score *= -0.7;
+          explanations.push('additional internal no reverses the observation by -0.7');
+        }
+      } else {
+        if (nounContext.descriptors) score *= 1.15;
+        if (nounContext.negations) score *= -0.7;
+        explanations.push('noun composition scales by 1.15 with descriptors; explicit no scales by -0.7');
+      }
+      if (nounContext.negations) rules.push('negation-scope');
+    }
     const absence = length === 1 && absenceStart >= 0 && entry.score < 0;
     const lack = length === 1 && lackStart >= 0 && entry.score > 0;
     if (absence || lack) {
@@ -120,7 +155,7 @@ export function scoreSentiment(tokens: Token[], context: ScoringContext = {}): P
         : 'more scales a positive quality by 1.15');
     }
     const negated = negationCount % 2 === 1;
-    if (negated) { score *= -0.7; rules.push('negation-scope'); }
+    if (negated) { score *= -0.7; if (!rules.includes('negation-scope')) rules.push('negation-scope'); }
     if (modifier !== 1) rules.push('degree-modifier');
     if (contrastWeight !== 1) rules.push('contrast-emphasis');
     const endToken = tokens[i + length - 1]!;
@@ -152,11 +187,12 @@ export function scoreSentiment(tokens: Token[], context: ScoringContext = {}): P
     const start = tokens[startIndex]!.start;
     const end = endToken.end;
     const spanText = context.text?.slice(start, end) ?? tokens.slice(startIndex, i + length).map(t => t.text).join(' ');
-    const heuristicConfidence = ambiguity.length ? 0.44 : negated || absence || lack ? 0.64 : length > 1 ? 0.86 : 0.78;
-    const emotion = negated || absence || lack ? undefined : entry.emotion;
+    const contextualNegation = !!nounContext?.negations;
+    const heuristicConfidence = ambiguity.length ? 0.44 : negated || contextualNegation || absence || lack ? 0.64 : length > 1 ? 0.86 : 0.78;
+    const emotion = negated || contextualNegation || absence || lack ? undefined : entry.emotion;
     predictions.push({ text: spanText, start, end, score, sentiment: score > 0 ? 'positive' : score < 0 ? 'negative' : 'neutral',
       emotion, importance: 0, confidence: null, heuristicConfidence, rules, ambiguity,
-      explanation: `${score > 0 ? 'Positive' : 'Negative'} lexical ${length > 1 ? 'phrase' : 'term'}${negated ? ', reversed by nearby negation' : ''}${modifier !== 1 ? ', adjusted by a degree modifier' : ''}${contrastWeight !== 1 ? ', emphasized after contrast' : ''}. Rules: ${rules.join(', ')}.${explanations.length ? ` Context: ${explanations.join('; ')}.` : ''}${ambiguity.length ? ` Abstention cue: ${ambiguity.join('; ')}.` : ''} Heuristic English baseline, not a calibrated probability.` });
+      explanation: `${score > 0 ? 'Positive' : 'Negative'} ${nounContext ? 'contextual noun frame' : `lexical ${length > 1 ? 'phrase' : 'term'}`}${negated ? ', reversed by nearby negation' : ''}${modifier !== 1 ? ', adjusted by a degree modifier' : ''}${contrastWeight !== 1 ? ', emphasized after contrast' : ''}. Rules: ${rules.join(', ')}.${explanations.length ? ` Context: ${explanations.join('; ')}.` : ''}${ambiguity.length ? ` Abstention cue: ${ambiguity.join('; ')}.` : ''} Heuristic English baseline, not a calibrated probability.` });
     i += length - 1;
   }
   return predictions;

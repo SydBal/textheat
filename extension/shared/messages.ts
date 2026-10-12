@@ -2,6 +2,8 @@ import type { ExtensionSettings, Mode, SiteSettings, StoredSettings } from './se
 export type PageAction = 'TOGGLE_PAGE' | 'PICK_TEXT' | 'CHECK_SELECTION' | 'CLEAR_PAGE';
 export type ExtensionMessage =
   | { type: 'GET_SETTINGS' }
+  | { type: 'PREPARE_AUTO' }
+  | { type: 'CANCEL_AUTO' }
   | { type: 'SAVE_SETTINGS'; settings: Partial<ExtensionSettings> }
   | { type: 'SAVE_SITE'; hostname: string; settings: SiteSettings }
   | { type: 'GET_STATE' }

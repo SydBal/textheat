@@ -6,6 +6,14 @@ const score = (text: string) => scoreSentiment(tokenize(text), { text });
 const last = (text: string) => score(text).at(-1)!;
 
 describe('bounded transparent contextual reasoning', () => {
+  it('keeps observation strength separate from the original absence aliases', () => {
+    expect(last('dont see any functional problems').score).toBeCloseTo(1.7 * 0.8);
+    expect(last('without problems').score).toBeCloseTo(1.7 * 0.7);
+    expect(last('free of problems').score).toBeCloseTo(1.7 * 0.7);
+    expect(last('not without problems').score).toBeCloseTo(-1.7 * 0.49);
+    expect(last('no functional problems').score).toBeCloseTo(1.7 * 1.15 * 0.7);
+  });
+
   it.each(['not only', 'not just', 'not merely', 'not simply', 'no doubt', 'without doubt'])('does not invert %s reliable', cue => {
     const p = last(`${cue} reliable`);
     expect(p.score).toBe(lexicon.get('reliable')!.score);

@@ -26,6 +26,7 @@ beforeEach(() => {
   vi.stubGlobal('IntersectionObserver', Observer);
   vi.stubGlobal('matchMedia', () => ({ matches: false }));
   document.body.innerHTML = '<article><h1>Amazing product</h1><p id="review">I love this wonderful product, but the service is terrible. 🧡</p></article>';
+  document.getSelection()!.removeAllRanges();
   controller = new PageController(document);
 });
 afterEach(() => { controller.destroy(); vi.useRealTimers(); vi.unstubAllGlobals(); document.body.replaceChildren(); });
@@ -60,6 +61,205 @@ describe('progressive extension controller', () => {
     controller.action('PICK_TEXT'); controller.configure(structuredClone(settings));
     expect(controller.state().picking).toBe(true); expect(highlights()[0]).toBe(span);
     expect(Observer.instances).toHaveLength(2);
+  });
+  it('updates presentation in place without replacing observers, spans or reveal state', async () => {
+    const NativeMutationObserver = window.MutationObserver;
+    let mutationObservers = 0;
+    vi.stubGlobal('MutationObserver', class extends NativeMutationObserver {
+      constructor(callback: MutationCallback) { super(callback); mutationObservers++; }
+    });
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
+    let settings = { ...defaults, mode: 'auto' as const };
+    controller.configure(settings); await visible();
+    const spans = highlights(), wrappers = spans.map(span => span.parentElement);
+    const processed = controller.state().processed;
+    const apply = (change: Partial<typeof settings>) => {
+      settings = { ...settings, ...change }; controller.configure(settings);
+      expect(highlights()).toEqual(spans);
+      spans.forEach((span, index) => {
+        expect(highlights()[index]).toBe(span); expect(span.parentElement).toBe(wrappers[index]);
+        expect(span.dataset.textheatAnimationState).toBe('visible');
+      });
+      expect(Observer.instances).toHaveLength(2); expect(mutationObservers).toBe(1);
+      expect(controller.state().processed).toBe(processed);
+    };
+    apply({ theme: 'dark' });
+    expect(spans.find(span => span.textContent === 'love')!.style.getPropertyValue('--textheat-bg')).toBe('#78350F');
+    apply({ theme: 'custom', customTheme: { joy: { background: '#ABCDEF', color: '#123456' } } });
+    expect(spans.find(span => span.textContent === 'love')!.style.getPropertyValue('--textheat-bg')).toBe('#ABCDEF');
+    apply({ customTheme: { joy: { background: '#FEDCBA', color: '#654321' } } });
+    expect(spans.find(span => span.textContent === 'love')!.style.getPropertyValue('--textheat-bg')).toBe('#FEDCBA');
+    apply({ showTooltips: true });
+    const titles = spans.map(span => span.title);
+    expect(titles.every(title => title.includes('uncalibrated heuristic'))).toBe(true);
+    apply({ showTooltips: false }); expect(spans.every(span => !span.hasAttribute('title'))).toBe(true);
+    apply({ showTooltips: true }); expect(spans.map(span => span.title)).toEqual(titles);
+    apply({ animate: false }); apply({ animate: true });
+    apply({ respectReducedMotion: false }); apply({ respectReducedMotion: true });
+    apply({ debug: true }); await work();
+    expect(highlights()[0]).toBe(spans[0]); expect(vi.getTimerCount()).toBe(0);
+    debug.mockRestore();
+  });
+  it('preserves waiting and animating spans on appearance updates and never replays settled reveals', async () => {
+    let settings = { ...defaults, mode: 'auto' as const };
+    controller.configure(settings); await work(); Observer.instances[0]!.all(); await work();
+    const spans = highlights(), span = spans[0]!;
+    expect(span.dataset.textheatAnimationState).toBe('waiting');
+    settings = { ...settings, theme: 'dark', showTooltips: true, debug: true };
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
+    controller.configure(settings);
+    expect(span.dataset.textheatAnimationState).toBe('waiting');
+    Observer.instances[1]!.trigger(span); expect(span.dataset.textheatAnimationState).toBe('animating');
+    controller.configure({ ...settings, theme: 'default' });
+    expect(span.dataset.textheatAnimationState).toBe('animating');
+    controller.configure({ ...settings, animate: false });
+    expect(spans.every(item => item.dataset.textheatAnimationState === 'visible')).toBe(true);
+    expect(Observer.instances[1]!.targets.size).toBe(0);
+    controller.configure(settings); await work(); Observer.instances[1]!.all();
+    expect(highlights()[0]).toBe(span); expect(span.dataset.textheatAnimationState).toBe('visible');
+    expect(Observer.instances).toHaveLength(2); debug.mockRestore();
+  });
+  it('settles existing reveals when reduced motion becomes respected without replay on opt-out', async () => {
+    vi.stubGlobal('matchMedia', () => ({ matches: true }));
+    const settings = { ...defaults, mode: 'auto' as const, respectReducedMotion: false };
+    controller.configure(settings); await work(); Observer.instances[0]!.all(); await work();
+    const span = highlights()[0]!; expect(span.dataset.textheatAnimationState).toBe('waiting');
+    controller.configure({ ...settings, respectReducedMotion: true });
+    expect(span.dataset.textheatAnimationState).toBe('visible');
+    controller.configure(settings); expect(span.dataset.textheatAnimationState).toBe('visible');
+    expect(highlights()[0]).toBe(span); expect(Observer.instances).toHaveLength(2);
+  });
+  it.each([false, true])('preserves Manual picking, panel identity and focus on settings changes (active=%s)', async active => {
+    const settings = { ...defaults, mode: 'manual' as const };
+    controller.configure(settings);
+    if (active) { controller.action('TOGGLE_PAGE'); await visible(); }
+    controller.action('CHECK_SELECTION');
+    const panel = document.querySelector('.textheat-extension-panel')!, focus = panel.shadowRoot!.activeElement;
+    controller.action('PICK_TEXT');
+    const hint = document.querySelector('.textheat-extension-pick-hint'), spans = highlights();
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
+    controller.configure({ ...settings, theme: 'dark', showTooltips: true, animate: false, debug: true, preloadPx: 250 });
+    expect(controller.state().picking).toBe(true); expect(controller.state().pageEnabled).toBe(active);
+    expect(document.querySelector('.textheat-extension-panel')).toBe(panel);
+    expect(document.querySelector('.textheat-extension-pick-hint')).toBe(hint);
+    expect(panel.shadowRoot!.activeElement).toBe(focus); expect(document.activeElement).toBe(panel);
+    spans.forEach((span, index) => expect(highlights()[index]).toBe(span));
+    controller.configure({ ...settings, threshold: 0.9 });
+    expect(controller.state().picking).toBe(true); expect(document.querySelector('.textheat-extension-panel')).toBe(panel);
+    expect(panel.shadowRoot!.activeElement).toBe(focus); debug.mockRestore();
+  });
+  it('reconstructs only the preload observer with wrapper parents and neutral targets, pruning removed subtrees', async () => {
+    document.body.innerHTML = '<article><p id="emotion">wonderful</p><p id="neutral">A factual sentence.</p><p id="removed">ordinary text</p></article>';
+    const settings = { ...defaults, mode: 'auto' as const };
+    controller.configure(settings); await visible();
+    const span = highlights()[0]!, near = Observer.instances[0]!, animation = Observer.instances[1]!;
+    const emotion = document.querySelector('#emotion')!, neutral = document.querySelector('#neutral')!, removed = document.querySelector('#removed')!;
+    removed.remove();
+    controller.configure({ ...settings, preloadPx: 400 });
+    const replacement = Observer.instances[2]!;
+    expect(Observer.instances).toHaveLength(3); expect(near.disconnected).toBe(true); expect(animation.disconnected).toBe(false);
+    expect(replacement.options!.rootMargin).toBe('400px 0px');
+    expect([...replacement.targets]).toEqual(expect.arrayContaining([emotion, neutral]));
+    expect(replacement.targets.has(removed)).toBe(false); expect(highlights()[0]).toBe(span);
+    expect(span.dataset.textheatAnimationState).toBe('visible');
+    near.trigger(neutral, false); // A stale callback must not alter visibility.
+    neutral.firstChild!.textContent = 'terrible'; await work(); replacement.all(); await work(); animation.all(); await work();
+    expect(highlights().map(item => item.textContent)).toEqual(['wonderful', 'terrible']);
+    controller.configure({ ...settings, preloadPx: 600 }); expect(Observer.instances[3]!.targets.has(removed)).toBe(false);
+    controller.disable(); expect(Observer.instances.every(observer => observer.disconnected)).toBe(true);
+  });
+  it('rebuilds threshold results synchronously as visible and progressively discovers newly eligible code', async () => {
+    document.body.innerHTML = '<p id="p">good terrible wonderful</p><code>excellent</code>';
+    const paragraph = document.querySelector('#p')!, text = paragraph.textContent!;
+    const settings = { ...defaults, mode: 'auto' as const };
+    controller.configure(settings); await visible();
+    const span = highlights()[0]!;
+    controller.configure({ ...settings, threshold: 0.9, processCode: true });
+    expect(highlights().map(item => item.textContent)).toEqual(analyze(text, { threshold: 0.9 }).highlights.map(item => item.text));
+    expect(highlights().every(item => item.dataset.textheatAnimationState === 'visible')).toBe(true);
+    expect(span.isConnected).toBe(false); expect(document.querySelector('code [data-textheat-extension]')).toBeNull();
+    expect(Observer.instances).toHaveLength(2);
+    controller.configure({ ...settings, processCode: true });
+    expect(paragraph.querySelectorAll('[data-textheat-extension="highlight"]').length).toBe(analyze(text).highlights.length);
+    expect(highlights().every(item => item.dataset.textheatAnimationState === 'visible')).toBe(true);
+    await visible(); expect(document.querySelector('code [data-textheat-extension="highlight"]')!.textContent).toBe('excellent');
+    controller.configure(settings); expect(document.querySelector('code [data-textheat-extension]')).toBeNull();
+    expect(highlights().every(item => item.dataset.textheatAnimationState === 'visible')).toBe(true);
+    await work(); expect(vi.getTimerCount()).toBe(0);
+  });
+  it('immediately reanalyzes previously processed nodes with no highlights when lowering the threshold', async () => {
+    document.body.innerHTML = '<p>good terrible wonderful</p>';
+    const settings = { ...defaults, mode: 'auto' as const, threshold: 1 };
+    controller.configure(settings); await visible(); expect(highlights()).toHaveLength(0);
+    Observer.instances[0]!.trigger(document.querySelector('p')!, false);
+    controller.configure({ ...settings, threshold: defaults.threshold });
+    expect(highlights().map(span => span.textContent)).toEqual(analyze(document.body.textContent!).highlights.map(item => item.text));
+    expect(highlights().every(span => span.dataset.textheatAnimationState === 'visible')).toBe(true);
+  });
+  it('preserves backward editor selection offsets during synchronous threshold and eligibility updates', async () => {
+    document.body.innerHTML = '<div contenteditable="true"><p>wonderful <b>terrible</b> product</p></div>';
+    const editor = document.querySelector('div')!, bold = editor.querySelector('b')!, selection = document.getSelection()!;
+    const settings = { ...defaults, mode: 'auto' as const, processEditable: true };
+    controller.configure(settings); await visible();
+    selection.setBaseAndExtent(editor.querySelector('p')!.lastChild!, 4, highlights()[0]!.firstChild!, 2);
+    const selected = selection.toString();
+    const offset = (node: Node, position: number) => {
+      const range = document.createRange(); range.selectNodeContents(editor); range.setEnd(node, position); return range.toString().length;
+    };
+    const anchor = offset(selection.anchorNode!, selection.anchorOffset), focus = offset(selection.focusNode!, selection.focusOffset);
+    for (const change of [{ threshold: 0.9 }, { threshold: 0.3 }, { processEditable: false }]) {
+      controller.configure({ ...settings, ...change });
+      expect(selection.toString()).toBe(selected);
+      expect(offset(selection.anchorNode!, selection.anchorOffset)).toBe(anchor);
+      expect(offset(selection.focusNode!, selection.focusOffset)).toBe(focus);
+      expect(editor.querySelector('b')).toBe(bold);
+      expect(highlights().every(span => span.dataset.textheatAnimationState === 'visible')).toBe(true);
+    }
+    expect(highlights()).toHaveLength(0);
+  });
+  it('defers presentation and synchronous rebuilds during IME while updating outside text immediately', async () => {
+    document.body.innerHTML = '<div contenteditable="true">wonderful product</div><p>good terrible</p>';
+    const editor = document.querySelector('div')!, settings = { ...defaults, mode: 'auto' as const, processEditable: true };
+    controller.configure(settings); await visible();
+    const wrapper = editor.firstChild, span = editor.querySelector<HTMLElement>('[data-textheat-extension="highlight"]')!, style = span.getAttribute('style');
+    editor.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+    span.firstChild!.textContent = 'terrible';
+    const selection = document.getSelection()!;
+    selection.setBaseAndExtent(span.firstChild!, 3, span.firstChild!, 3);
+    const updated = { ...settings, threshold: 0.9, theme: 'dark' as const, showTooltips: true, animate: false };
+    controller.configure(updated);
+    expect(editor.firstChild).toBe(wrapper); expect(span.getAttribute('style')).toBe(style); expect(span.title).toBe('');
+    expect(highlights().filter(item => !editor.contains(item)).map(item => item.textContent)).toEqual(analyze('good terrible', { threshold: 0.9 }).highlights.map(item => item.text));
+    editor.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }));
+    expect(editor.firstChild).not.toBe(wrapper);
+    expect(editor.textContent).toBe('terrible product'); expect(selection.isCollapsed).toBe(true); expect(selection.anchorOffset).toBe(3);
+    expect([...editor.querySelectorAll('[data-textheat-extension="highlight"]')].map(item => item.textContent)).toEqual(analyze('terrible product', { threshold: 0.9 }).highlights.map(item => item.text));
+    expect([...editor.querySelectorAll<HTMLElement>('[data-textheat-extension="highlight"]')].every(item => item.dataset.textheatAnimationState === 'visible' && item.title.includes('uncalibrated heuristic'))).toBe(true);
+    await work(); expect(Observer.instances).toHaveLength(2); expect(vi.getTimerCount()).toBe(0);
+  });
+  it('applies deferred appearance without replacing the composing wrapper after compositionend', async () => {
+    document.body.innerHTML = '<div contenteditable="true">wonderful</div>';
+    const editor = document.querySelector('div')!, settings = { ...defaults, mode: 'auto' as const, processEditable: true };
+    controller.configure(settings); await visible();
+    const span = highlights()[0]!, wrapper = span.parentElement, style = span.getAttribute('style');
+    editor.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+    controller.configure({ ...settings, theme: 'dark', showTooltips: true, animate: false });
+    expect(span.getAttribute('style')).toBe(style); expect(span.title).toBe('');
+    editor.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true })); await work();
+    expect(highlights()[0]).toBe(span); expect(span.parentElement).toBe(wrapper);
+    expect(span.getAttribute('style')).not.toBe(style); expect(span.title).toContain('uncalibrated heuristic');
+    expect(span.dataset.textheatAnimationState).toBe('visible');
+  });
+  it('retains exclusion cleanup after in-place updates and removes all Manual tools when switched Off', async () => {
+    const settings = { ...defaults, mode: 'manual' as const };
+    controller.configure(settings); controller.action('TOGGLE_PAGE'); await visible();
+    controller.action('CHECK_SELECTION'); controller.action('PICK_TEXT');
+    controller.configure({ ...settings, showTooltips: true, theme: 'dark' });
+    document.querySelector('article')!.setAttribute('inert', ''); await work(); expect(highlights()).toHaveLength(0);
+    controller.configure({ ...settings, mode: 'off' });
+    expect(controller.state().pageEnabled).toBe(false); expect(controller.state().picking).toBe(false);
+    expect(document.querySelectorAll('[data-textheat-extension]')).toHaveLength(0);
+    expect(Observer.instances.every(observer => observer.disconnected)).toBe(true); expect(vi.getTimerCount()).toBe(0);
   });
   it('does no scanning or observer setup while Off or inactive Manual', async () => {
     controller.configure(defaults); await work();

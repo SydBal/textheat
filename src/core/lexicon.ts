@@ -1,6 +1,7 @@
 import type { Emotion } from './types';
 import { expandedEntries } from './lexicon-expanded';
 import { domainEntries } from './lexicon-domains';
+import { reviewEntries } from './lexicon-reviews';
 export interface Lexeme { score: number; emotion?: Emotion }
 // Original compact English baseline; no third-party lexicon or training data.
 const entries: [string, number, Emotion?][] = [
@@ -31,7 +32,7 @@ const entries: [string, number, Emotion?][] = [
 ];
 // Old expansion and baseline last: preserve every previously authored value.
 export const lexicon: ReadonlyMap<string, Lexeme> = new Map(
-  [...domainEntries, ...expandedEntries, ...entries].map(([word, score, emotion]) => [word, { score, emotion }])
+  [...reviewEntries, ...domainEntries, ...expandedEntries, ...entries].map(([word, score, emotion]) => [word, { score, emotion }])
 );
 export const maxPhraseWords = Math.max(...Array.from(lexicon.keys(), key => key.split(' ').length));
 /** Counts describe unique merged keys, not source rows or estimated coverage. */

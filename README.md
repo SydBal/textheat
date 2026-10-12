@@ -51,7 +51,7 @@ Threshold and minimum confidence must be finite values from 0 to 1. An `emotions
 ```ts
 import {
   analyze, heat, tokenize, scoreSentiment, scoreImportance,
-  calibrate, renderHTML, escapeHTML, getTheme, createTextheat
+  calibrate, renderHTML, escapeHTML, getTheme, createTextheat, lexiconStats
 } from 'textheat';
 
 const text = createTextheat({ theme: 'dark' });
@@ -60,7 +60,7 @@ const another = text.configure({ threshold: 0.8 }); // NEW instance, not mutatio
 
 Default and named imports are available in ESM and CommonJS. For CommonJS use `const { heat, analyze } = require('textheat')`. Default API instances only expose `heat`, `analyze`, and immutable `configure`; use named imports for independent core functions.
 
-The frozen, read-only `lexiconStats` object reports `{ entries: 5642, words: 1637, phrases: 4005, maxPhraseWords: 12 }`. Its intended public API is a named root/core export, also available through the browser entry point—not a property on the default `text` instance. **The core object currently exists but its public API re-export is still missing**; see [the statistics contract and integration caveat](docs/API.md#lexicon-statistics). Counts describe unique merged dictionary keys, not source rows or accuracy.
+The frozen, read-only `lexiconStats` object reports `{ entries: 5981, words: 1850, phrases: 4131, maxPhraseWords: 12 }`. It is an implemented named export from `textheat`, `textheat/core`, and `textheat/browser`—not a property on the default `text` instance. See [the statistics contract](docs/API.md#lexicon-statistics). Counts describe unique merged dictionary keys, not source rows or accuracy.
 
 ## Browser and tooltips
 
@@ -98,7 +98,7 @@ Formats: `json`, `html`, `plain`, and `terminal` (default, ANSI colors only on a
 
 This is an **original lexical/rule baseline**, not an ML model or reinforcement-learning implementation. Inspired by calibrated decision architectures, it separates contextual scoring, importance, correctness heuristics, calibration, and abstention.
 
-- Longest multiword matches, negators and contractions, degree modifiers, punctuation, and contrasts.
+- Curated bounded noun frames before lexical terms, with existing exact phrases at the starting token retaining precedence; longest multiword matches, negators and contractions, degree modifiers, punctuation, and contrasts.
 - Offsets are zero-based, end-exclusive **JavaScript UTF-16 code units**, exactly usable with `text.slice(start, end)`; not code-point or grapheme counts.
 - Importance measures bounded emotional strength plus specificity, not confidence.
 - `confidence` is `null` by default. `heuristicConfidence` is a hand-defined, **uncalibrated** correctness estimate, not a statistical probability.
@@ -106,7 +106,7 @@ This is an **original lexical/rule baseline**, not an ML model or reinforcement-
 - `calibrate` supports an externally parameterized Platt transform. No calibration dataset, fitted parameters, RL training, or held-out accuracy claims are bundled. Supplying parameters marks externally calibrated mode; the caller must fit and validate those parameters. This does not calibrate overall sentiment.
 - Unknown/factual words produce no highlights; low-correctness estimates can abstain via `minConfidence`.
 
-English only. Sarcasm, implicit sentiment, domain-specific meanings, complex negation, quoted opinions, and ambiguous emotions remain limitations. Unicode is preserved but non-English emotional vocabulary is not modeled. The originally authored vocabulary contains **5,642 unique entries: 1,637 words and 4,005 phrases**, with longest matches up to **12 words**. There is **no external corpus**, imported lexicon, or training dataset. Domain-review phrases include constrained combinations of compatible authored subjects/predicates in a local “the SUBJECT was PREDICATE” template, not unrestricted noun/adjective generation or semantic parsing. More keys and template combinations do not imply measured accuracy. Original baseline entries override the earlier expansion, which overrides domain additions; all 1,392 legacy entries retain their scores/emotions.
+English only. Sarcasm, implicit sentiment, domain-specific meanings, complex negation, quoted opinions, and ambiguous emotions remain limitations. Unicode is preserved but non-English emotional vocabulary is not modeled. The originally authored vocabulary contains **5,981 unique entries: 1,850 words and 4,131 phrases**, with longest matches up to **12 words**. The latest review layer adds **339 individually authored keys: 213 words and 126 phrases**, with **no template generation in this layer**. There is **no external corpus**, imported lexicon, or training dataset. Earlier domain-review phrases include constrained combinations of compatible authored subjects/predicates in a local “the SUBJECT was PREDICATE” template, not unrestricted noun/adjective generation or semantic parsing. More keys and template combinations do not imply measured accuracy. Merge precedence is original baseline > earlier expansion > domain additions > latest review additions; all 1,392 legacy entries retain their scores/emotions.
 
 ## Deeper fast analysis
 
@@ -114,6 +114,7 @@ The default pipeline now also provides:
 
 - **VADER-inspired rules** (an original implementation, not the VADER package): mixed-case capitalization, up to three exclamation marks, bounded degree modifiers, contrast, and negation across up to eight preceding tokens.
 - **Phrase composition:** “great disappointment” takes the negative noun's polarity instead of painting “great” positive.
+- **Curated noun-head frames:** up to three explicitly listed descriptors take a listed negative head's polarity, not a subjective adjective's independent green highlight inside the same recognized span. “Functional problems” uses the head score × **1.15**. A listed negated observation prefix + **see/find/notice/detect/encounter/experience/have** + optional **any/a/no** + zero to three descriptors + listed singular/plural negative head consumes the full frame once and scales the head by **-0.8**; additional internal `no` or odd external negation reverses it by **-0.7**. Descriptor composition outside observations uses **1.15**, followed by **-0.7** for explicit `no`. Existing exact phrases at the starting token retain precedence. Fallback head scores exist only in recognized frames, not as new standalone aliases. Missing-apostrophe `dont` is supported only as the negator of a complete observation frame; `funcitonal` is accepted only as a descriptor in that frame, not by general fuzzy matching.
 - **Bounded contextual reasoning:** additive “not only/just/merely/simply” and certainty “no/without doubt” do not reverse a predicate, but another real negator still can. Listed negative-noun absence (“without errors,” “free of bugs,” “free from problems”) and listed positive-noun lack (“lack of support,” “lacks reliability”) multiply by **-0.7** before external negation; aliases supply an existing lexeme only inside these exact frames. Adjacent less/more scales seven listed positive qualities by **0.65/1.15**, not blanket reversal. Internal words of a longest dictionary phrase keep its authored reading. See [the exact lists, scope limits, multipliers, and precedence](docs/HIGHLIGHTING_ALGORITHM.md#3-adjust-the-evidence-using-nearby-context).
 - **Deterministic POS hints:** `tagTokens(tokenize(text))` returns grammatical hints using compact word sets and suffix rules. This is **not a trained POS tagger or full dependency parser**; unknown alphabetic words default to candidate nouns.
 - **Clause analysis:** `segmentClauses(text)` preserves exact offsets and splits at punctuation, newlines, contrast, and `and`/`or`/`because`, except `and` within a recognized coordinated subject list. `analysis.clauses` includes sentiment and evidence even if display thresholds hide it.
@@ -121,6 +122,8 @@ The default pipeline now also provides:
 - **Ambiguity and abstention:** bounded preceding `if`/`unless`/`would`/`could` and listed hedges retain lexical scores but set heuristic correctness to **0.44**. Listed “too ADJECTIVE to ACTION” and negated “QUALITY enough” frames also set **0.44**, without arbitrary adjective reversal. Questions and a narrow “Great, another crash” irony pattern likewise lower heuristic correctness below the default **0.50** display cutoff. `analysis.ambiguity` explains cues; each prediction's `rules` and `ambiguity` arrays expose the decision path. This is not general sarcasm detection or hypothetical understanding.
 
 The added fields are clause/aspect evidence, not model probabilities. Raising the highlight threshold does not remove this deeper evidence. POS hints, clause splitting, and aspect attribution are heuristic and can misinterpret grammar, noun phrases, and subject/object relationships.
+
+At defaults, **“dont see any functional problems”** is one full-span **positive green** highlight: score **+1.36**, importance **0.34**, `heuristicConfidence` **0.64**, `confidence: null`, no emotion. “Don't see no functional problems” instead produces negative evidence **-0.952**; “don't think there are no problems” produces **-0.833**, and its “no functional problems” variant produces **-0.95795**. All three are below the default importance threshold and remain uncolored, not falsely green. Questions and bounded conditional/modal cues set correctness to **0.44** and normally abstain. These are narrow tested rules, not a general parser; extension page highlighting applies them separately per text node.
 
 The demo reports recognized versus displayed emotional spans and opinions without an identifiable target. Expand **“Why was this phrase highlighted—or omitted?”** to inspect per-phrase explanations, low-threshold omissions, and uncertainty abstention. A vocabulary miss is reported explicitly rather than treated as evidence of neutrality. Lowering thresholds cannot recognize unfamiliar vocabulary; no fixed dictionary covers every new phrase. The bundled regression tests include actual typed-text DOM updates, not only preset sentences.
 

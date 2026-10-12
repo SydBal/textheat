@@ -41,6 +41,15 @@ export function extensionTheme(settings: ExtensionSettings, element?: Element): 
   return settings.theme;
 }
 export interface Replacement { original: Text; value: string }
+// Keep explanation text even when tooltips are disabled; never parse page markup.
+const explanations = new WeakMap<Element, string>();
+export function updateTooltips(wrapper: Element, enabled: boolean): void {
+  for (const span of wrapper.querySelectorAll<HTMLElement>('[data-textheat-extension="highlight"]')) {
+    const explanation = explanations.get(span);
+    if (enabled && explanation) span.title = explanation;
+    else span.removeAttribute('title');
+  }
+}
 export function recolorHighlights(wrapper: Element, theme: Theme): void {
   for (const span of wrapper.querySelectorAll<HTMLElement>('[data-textheat-extension="highlight"]')) {
     const category = (span.dataset.emotion ?? span.dataset.sentiment) as Category;
@@ -74,7 +83,9 @@ export function replaceText(node: Text, settings: ExtensionSettings, palette?: T
     const color = theme[p.emotion ?? p.sentiment];
     span.style.setProperty('--textheat-bg', color.background);
     span.style.setProperty('--textheat-fg', color.color);
-    if (settings.showTooltips) span.title = `${p.sentiment}${p.emotion ? ` / ${p.emotion}` : ''}; importance ${p.importance.toFixed(2)}; uncalibrated heuristic ${p.heuristicConfidence.toFixed(2)}. ${p.explanation}`;
+    const explanation = `${p.sentiment}${p.emotion ? ` / ${p.emotion}` : ''}; importance ${p.importance.toFixed(2)}; uncalibrated heuristic ${p.heuristicConfidence.toFixed(2)}. ${p.explanation}`;
+    explanations.set(span, explanation);
+    if (settings.showTooltips) span.title = explanation;
     span.textContent = input.slice(p.start, p.end);
     wrapper.append(span); highlights.push(span); offset = p.end;
   }

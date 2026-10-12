@@ -60,13 +60,48 @@ beforeEach(() => {
   document.documentElement.innerHTML = fixture;
 });
 afterEach(async () => {
+  window.dispatchEvent(new Event('pagehide'));
   await flush();
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   document.documentElement.innerHTML = '';
 });
 
 describe('popup Chrome integration', () => {
+  it('updates actual page counts as content is added or removed, and stops when closed', async () => {
+    vi.useFakeTimers();
+    const mock = await popup('auto'); mock.connect();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(control('page-status').textContent).toContain('2 highlights');
+    mock.tabs.sendMessage.mockResolvedValue({ ok: true, state: { mode: 'auto', pageEnabled: true, picking: false, highlights: 19, processed: 26 } });
+    await vi.advanceTimersByTimeAsync(500);
+    expect(control('page-status').textContent).toBe('19 highlights · 26 processed · page on');
+    mock.tabs.sendMessage.mockResolvedValue({ ok: true, state: { mode: 'auto', pageEnabled: true, picking: false, highlights: 3, processed: 26 } });
+    await vi.advanceTimersByTimeAsync(500);
+    expect(control('page-status').textContent).toContain('3 highlights');
+    expect(mock.tabs.sendMessage).toHaveBeenCalledWith(7, { type: 'GET_STATE' }, { frameId: 0 });
+    expect(mock.scripting.executeScript).not.toHaveBeenCalled();
+    const calls = mock.tabs.sendMessage.mock.calls.length;
+    window.dispatchEvent(new Event('pagehide')); await vi.advanceTimersByTimeAsync(2000);
+    expect(mock.tabs.sendMessage).toHaveBeenCalledTimes(calls);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it('does not overlap pending count requests or publish their results after close', async () => {
+    vi.useFakeTimers();
+    const mock = await popup('auto');
+    let resolve!: (response: ExtensionResponse) => void;
+    mock.tabs.sendMessage.mockImplementationOnce(() => new Promise<ExtensionResponse>(done => { resolve = done; }));
+    await vi.advanceTimersByTimeAsync(500);
+    const calls = mock.tabs.sendMessage.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(mock.tabs.sendMessage).toHaveBeenCalledTimes(calls);
+    window.dispatchEvent(new Event('pagehide'));
+    const status = control('page-status').textContent;
+    resolve({ ok: true, state: { mode: 'auto', pageEnabled: true, picking: false, highlights: 99, processed: 100 } }); await flush();
+    expect(control('page-status').textContent).toBe(status);
+    expect(vi.getTimerCount()).toBe(0);
+  });
   it('switches Off → Auto → Manual → Off, renders manual tools and actual assigned shortcuts', async () => {
     const mock = await popup();
     expect(control('manual-panel').hidden).toBe(true);
@@ -74,6 +109,8 @@ describe('popup Chrome integration', () => {
     expect(control('shortcut-pick-text').textContent).toBe('Ctrl+Shift+P');
     expect(control('shortcut-check-selection').textContent).toBe('Not assigned');
     changeMode('auto');
+    expect(mock.runtime.sendMessage).toHaveBeenCalledWith({ type: 'PREPARE_AUTO' });
+    expect(mock.runtime.sendMessage.mock.invocationCallOrder.at(-1)!).toBeLessThan(mock.permissions.request.mock.invocationCallOrder[0]!);
     expect(mock.permissions.request).toHaveBeenCalledWith({ origins: ['http://*/*', 'https://*/*'] });
     await flush();
     expect(mock.stored().settings.mode).toBe('auto');
@@ -97,7 +134,7 @@ describe('popup Chrome integration', () => {
     mock.permissions.request.mockResolvedValue(false);
     changeMode('auto');
     await flush();
-    expect(mock.runtime.sendMessage).toHaveBeenCalledTimes(1);
+    expect(mock.runtime.sendMessage.mock.calls.map(([message]) => message.type)).toEqual(['GET_SETTINGS', 'PREPARE_AUTO', 'CANCEL_AUTO']);
     expect(mock.stored().settings.mode).toBe('manual');
     expect(document.querySelector<HTMLInputElement>('input[value="manual"]')!.checked).toBe(true);
     expect(control('manual-panel').hidden).toBe(false);
@@ -173,5 +210,17 @@ describe('popup Chrome integration', () => {
     checkbox.checked = true; checkbox.dispatchEvent(new Event('change', { bubbles: true })); await flush();
     expect(mock.runtime.sendMessage).toHaveBeenCalledWith({ type: 'SAVE_SETTINGS', settings: { [key]: true } });
     expect(mock.stored().settings[key]).toBe(true); expect(checkbox.checked).toBe(true);
+  });
+  it('marks brief saves busy without changing the selected control before persistence', async () => {
+    const mock = await popup();
+    let resolve!: (response: ExtensionResponse) => void;
+    mock.runtime.sendMessage.mockImplementationOnce(() => new Promise<ExtensionResponse>(done => { resolve = done; }));
+    const theme = control<HTMLSelectElement>('theme'); theme.value = 'dark';
+    theme.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(document.querySelector('main')!.getAttribute('aria-busy')).toBe('true');
+    expect(theme.value).toBe('dark');
+    resolve({ ok: true, stored: { settings: { ...defaults, theme: 'dark' }, sites: {} } }); await flush();
+    expect(document.querySelector('main')!.getAttribute('aria-busy')).toBe('false');
+    expect(theme.value).toBe('dark');
   });
 });

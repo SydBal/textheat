@@ -3,7 +3,7 @@ import type { ExtensionSettings } from '../../extension/shared/settings';
 import { defaults, validateSettings } from '../../extension/shared/settings';
 import type { PageAction, PageState } from '../../extension/shared/messages';
 import { editingRoot, eligibleElement, eligibleField, eligibleText } from './exclusions';
-import { extensionTheme, marker, recolorHighlights, replaceText, restoreWrapper } from './renderer';
+import { extensionTheme, marker, recolorHighlights, replaceText, restoreWrapper, updateTooltips } from './renderer';
 import type { Replacement } from './renderer';
 
 /** Progressive, bounded page jobs. No page text ever leaves this document. */
@@ -13,6 +13,7 @@ export class PageController {
   private suspended = false;
   private picking = false;
   private processed = new WeakMap<Text, string>();
+  private processedParents = new WeakSet<Element>();
   private originals = new WeakMap<Element, Replacement>();
   private seen = new WeakSet<Element>();
   private generated = new WeakSet<Node>();
@@ -25,6 +26,7 @@ export class PageController {
   private idle?: number;
   private idleKind: 'idle' | 'timeout' = 'timeout';
   private near?: IntersectionObserver;
+  private nearTargets = new Set<Element>();
   private animation?: IntersectionObserver;
   private mutations?: MutationObserver;
   private panel?: HTMLElement;
@@ -36,6 +38,7 @@ export class PageController {
   private colorScheme?: MediaQueryList;
   private composing = new Set<Element>();
   private deferredRestore = new Set<Element>();
+  private deferredRebuild = new Set<Element>();
   private compositionStart = (event: CompositionEvent) => {
     const target = event.target as Element;
     const root = target?.nodeType === 1 && editingRoot(target);
@@ -51,6 +54,10 @@ export class PageController {
         this.deferredRestore.delete(wrapper); this.restore(wrapper);
       }
       if (this.active) {
+        const parents = [...this.deferredRebuild].filter(parent => !this.isComposing(parent));
+        for (const parent of parents) this.deferredRebuild.delete(parent);
+        this.rebuild(parents);
+        this.updatePresentation();
         this.enqueueRoot(root); this.queuePalettes(root);
         for (const span of root.querySelectorAll<HTMLElement>('[data-textheat-extension="highlight"]')) {
           if (span.dataset.textheatAnimationState === 'animating') span.dataset.textheatAnimationState = 'waiting';
@@ -83,6 +90,34 @@ export class PageController {
     // Storage notifications and save reconciliation can deliver the same update
     // twice. Never cancel Manual tools or rebuild the DOM for a no-op update.
     if (!this.suspended && JSON.stringify(settings) === JSON.stringify(this.settings)) return;
+    if (!this.suspended && settings.mode === this.settings.mode) {
+      const reanalyze = settings.threshold !== this.settings.threshold || settings.processCode !== this.settings.processCode || settings.processEditable !== this.settings.processEditable;
+      const preload = settings.preloadPx !== this.settings.preloadPx;
+      // Handle real page edits first, then suppress our synchronous replacement
+      // and style records. Reuse the same observer rather than restarting work.
+      if (this.mutations) this.changed(this.mutations.takeRecords());
+      this.mutations?.disconnect();
+      this.settings = settings;
+      // A genuine Auto settings change still activates a previously cleared
+      // page; identical broadcasts above intentionally leave Clear untouched.
+      if (!this.active && settings.mode === 'auto') { this.enable(); return; }
+      try {
+        if (this.active) {
+          if (preload && this.near) this.observeNear();
+          if (reanalyze) {
+            const parents = new Set<Element>();
+            for (const wrapper of this.doc.querySelectorAll(marker)) if (wrapper.parentElement) parents.add(wrapper.parentElement);
+            // Previously processed neutral nodes must also get the new threshold.
+            for (const parent of this.nearTargets) if (this.processedParents.has(parent)) parents.add(parent);
+            this.processed = new WeakMap();
+            this.rebuild(parents);
+            this.enqueueRoot(this.doc.body);
+          }
+          this.updatePresentation();
+        }
+      } finally { this.observeMutations(); }
+      return;
+    }
     this.suspended = false;
     this.disable(); this.settings = settings;
     if (settings.mode === 'auto' || settings.mode === 'manual' && wasActive) this.enable();
@@ -94,11 +129,7 @@ export class PageController {
     this.doc.addEventListener('compositionend', this.compositionEnd, true);
     const win = this.doc.defaultView!;
     if (typeof win.IntersectionObserver === 'function') {
-      this.near = new win.IntersectionObserver(entries => {
-        for (const entry of entries) if (entry.isIntersecting) {
-          this.visible.add(entry.target); this.queueJob(entry.target);
-        } else this.visible.delete(entry.target);
-      }, { rootMargin: `${this.settings.preloadPx}px 0px`, threshold: 0 });
+      this.observeNear();
       this.animation = new win.IntersectionObserver(entries => {
         for (const entry of entries) if (entry.isIntersecting) this.reveal(entry.target as HTMLElement);
       }, { threshold: 0 });
@@ -107,8 +138,54 @@ export class PageController {
     this.colorScheme = win.matchMedia?.('(prefers-color-scheme: dark)');
     this.colorScheme?.addEventListener?.('change', this.refreshPalette);
     // Observing the document supports body replacement without patching SPA internals.
-    this.mutations.observe(this.doc.documentElement, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['hidden', 'inert', 'open', 'class', 'style', 'aria-hidden', 'contenteditable'] });
+    this.observeMutations();
     this.enqueueRoot(this.doc.body);
+  }
+  private observeMutations(): void {
+    this.mutations?.observe(this.doc.documentElement, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['hidden', 'inert', 'open', 'class', 'style', 'aria-hidden', 'contenteditable'] });
+  }
+  private observeNear(): void {
+    this.near?.disconnect();
+    for (const wrapper of this.doc.querySelectorAll(marker)) if (wrapper.parentElement) {
+      this.nearTargets.add(wrapper.parentElement); this.seen.add(wrapper.parentElement);
+    }
+    this.near = new this.doc.defaultView!.IntersectionObserver((entries, observer) => {
+      if (!this.active || observer !== this.near) return;
+      for (const entry of entries) if (this.nearTargets.has(entry.target)) {
+        if (entry.isIntersecting) { this.visible.add(entry.target); this.queueJob(entry.target); }
+        else this.visible.delete(entry.target);
+      }
+    }, { rootMargin: `${this.settings.preloadPx}px 0px`, threshold: 0 });
+    for (const target of this.nearTargets) {
+      if (target.isConnected) this.near.observe(target);
+      else { this.nearTargets.delete(target); this.seen.delete(target); this.visible.delete(target); }
+    }
+  }
+  private updatePresentation(): void {
+    for (const wrapper of this.doc.querySelectorAll(marker)) {
+      if (this.isComposing(wrapper)) continue;
+      recolorHighlights(wrapper, getTheme(extensionTheme(this.settings, wrapper.parentElement ?? undefined)));
+      updateTooltips(wrapper, this.settings.showTooltips);
+      if (!this.settings.animate || this.reducedMotion()) {
+        for (const span of wrapper.querySelectorAll<HTMLElement>('[data-textheat-extension="highlight"]')) {
+          this.animation?.unobserve(span);
+          span.dataset.textheatAnimationState = 'visible';
+        }
+      }
+    }
+  }
+  private rebuild(parents: Iterable<Element>): void {
+    for (const parent of parents) {
+      if (!parent.isConnected) { this.deferredRebuild.delete(parent); continue; }
+      if (this.isComposing(parent)) { this.deferredRebuild.add(parent); continue; }
+      for (const wrapper of [...parent.children]) if (wrapper.matches(marker)) {
+        this.count = Math.max(0, this.count - wrapper.querySelectorAll('[data-textheat-extension="highlight"]').length);
+        this.restore(wrapper, this.originals.get(wrapper));
+      }
+      // This entire unwrap/analyze/wrap runs in configure's current task. Text
+      // already processed on the page must never return to the reveal queue.
+      this.processElement(parent, true);
+    }
   }
   disable(): void {
     this.active = false; this.cancelPick(); this.closePanel();
@@ -123,9 +200,10 @@ export class PageController {
     for (const frame of this.animationFrames) win.cancelAnimationFrame(frame);
     this.animationFrames.clear();
     this.roots = []; this.jobs = []; this.walker = undefined;
+    this.nearTargets.clear(); this.deferredRebuild.clear();
     for (const wrapper of this.doc.querySelectorAll(marker)) this.restore(wrapper, this.originals.get(wrapper));
     if (!this.composing.size) this.removeCompositionListeners();
-    this.processed = new WeakMap(); this.originals = new WeakMap(); this.seen = new WeakSet();
+    this.processed = new WeakMap(); this.processedParents = new WeakSet(); this.originals = new WeakMap(); this.seen = new WeakSet();
     this.generated = new WeakSet(); this.visible = new WeakSet(); this.queuedRoots = new WeakSet(); this.queuedJobs = new WeakSet();
     this.count = 0; this.processedCount = 0;
   }
@@ -188,11 +266,11 @@ export class PageController {
   private discover(node: Text): void {
     if (!eligibleText(node, this.settings)) return;
     const parent = node.parentElement!;
-    if (!this.seen.has(parent)) { this.seen.add(parent); this.near?.observe(parent); }
+    if (!this.seen.has(parent)) { this.seen.add(parent); this.nearTargets.add(parent); this.near?.observe(parent); }
     if (this.processed.get(node) === node.data) return;
     if (!this.near || this.visible.has(parent)) this.queueJob(parent);
   }
-  private processElement(element: Element): void {
+  private processElement(element: Element, alreadyPresented = false): void {
     if (this.isComposing(element)) return;
     if (!eligibleElement(element, this.settings)) {
       // A page may become hidden/editable after it was highlighted. Undo our
@@ -217,6 +295,7 @@ export class PageController {
       const value = node.data;
       try {
         const replacement = replaceText(node, this.settings, palette);
+        this.processedParents.add(element);
         this.processed.set(node, value); this.processedCount++;
         if (!replacement.wrapper) continue;
         this.originals.set(replacement.wrapper, { original: node, value });
@@ -224,7 +303,8 @@ export class PageController {
         for (const child of replacement.wrapper.childNodes) this.generated.add(child);
         for (const span of replacement.highlights) {
           this.count++;
-          if (!this.animation || this.reducedMotion() || !this.settings.animate) this.reveal(span);
+          if (alreadyPresented) span.dataset.textheatAnimationState = 'visible';
+          else if (!this.animation || this.reducedMotion() || !this.settings.animate) this.reveal(span);
           else this.animation.observe(span);
         }
       } catch (error) { if (this.settings.debug) console.debug('textheat skipped node', error); }
@@ -276,7 +356,11 @@ export class PageController {
           this.near?.unobserve(removed as Element); this.animation?.unobserve(removed as Element);
           for (const element of (removed as Element).querySelectorAll('*')) { this.near?.unobserve(element); this.animation?.unobserve(element); }
           this.seen.delete(removed as Element); this.visible.delete(removed as Element);
-          for (const element of (removed as Element).querySelectorAll('*')) { this.seen.delete(element); this.visible.delete(element); }
+          this.nearTargets.delete(removed as Element); this.deferredRebuild.delete(removed as Element);
+          for (const element of (removed as Element).querySelectorAll('*')) {
+            this.seen.delete(element); this.visible.delete(element);
+            this.nearTargets.delete(element); this.deferredRebuild.delete(element);
+          }
         }
       }
       for (const added of record.addedNodes) if (!this.generated.has(added)) this.enqueueRoot(added);
@@ -286,6 +370,12 @@ export class PageController {
       this.count = Math.max(0, this.count - wrapper.querySelectorAll('[data-textheat-extension="highlight"]').length);
       for (const span of wrapper.querySelectorAll('[data-textheat-extension="highlight"]')) this.animation?.unobserve(span);
       this.restore(wrapper); this.enqueueRoot(parent);
+    }
+    // Composition records can bypass the normal removal branch. Prune retained
+    // observation targets without touching the composing DOM.
+    for (const target of this.nearTargets) if (!target.isConnected) {
+      this.near?.unobserve(target); this.nearTargets.delete(target);
+      this.seen.delete(target); this.visible.delete(target); this.deferredRebuild.delete(target);
     }
   }
 

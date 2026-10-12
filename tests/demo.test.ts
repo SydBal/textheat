@@ -121,6 +121,19 @@ describe('live browser demo attribution', () => {
     expect(element('#evidence').textContent).toContain('hypothetical-scope');
     expect(element('#evidence').textContent).toContain('Hidden: uncertainty / abstention');
   });
+  it('highlights the complete negated problem observation green rather than a red adjective', () => {
+    for (const input of ['dont see any functional problems', "don't see any functional problems", 'dont see any funcitonal problems']) {
+      type(input);
+      const spans = document.querySelectorAll<HTMLElement>('#output .textheat-highlight');
+      expect(spans).toHaveLength(1);
+      expect(spans[0]!.textContent).toBe(input);
+      expect(spans[0]!.dataset.sentiment).toBe('positive');
+      expect(spans[0]!.dataset.emotion).toBeUndefined();
+      expect(element('#evidence').textContent).toContain('negative-noun-observation');
+    }
+    type('The app has functional problems.');
+    expect(element<HTMLElement>('#output .textheat-highlight').dataset.sentiment).toBe('negative');
+  });
   it('keeps native editing selection while updating an inaccessible highlight mirror', () => {
     const input = element<HTMLTextAreaElement>('#input');
     input.value = 'I love this good interface. 🧡'; input.focus(); input.setSelectionRange(7, 11, 'backward');

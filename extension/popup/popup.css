@@ -10,6 +10,8 @@ main { padding: 0 20px 12px; }
 button, input, select { font: inherit; accent-color: var(--accent); }
 button { cursor: pointer; }
 button:disabled, input:disabled, select:disabled { cursor: not-allowed; opacity: .55; }
+/* Brief save locks must not flash the whole popup; unavailable tools still dim. */
+main[aria-busy="true"] :is(button,input,select):disabled { opacity: 1; }
 :focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
 fieldset { padding: 0; border: 0; margin: 0; }
 legend { font-weight: 600; padding: 0 0 9px; }

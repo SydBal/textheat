@@ -1,4 +1,5 @@
 import { analyze, getPageTheme } from '../src/browser/index';
+import { ReactionManager } from '../src/extension/reactions';
 
 // Original, recognizable adjectives: every entry is checked against the engine in tests.
 // Interleave categories so adjacent words keep demonstrating different palette colors.
@@ -20,6 +21,8 @@ export function startHeroRotation(doc: Document = document): { refresh: () => vo
   const label = word.querySelector<HTMLElement>('.hero-emotion-text')!;
   const win = doc.defaultView!;
   const motion = win.matchMedia?.('(prefers-reduced-motion: reduce)');
+  const emojiToggle = doc.querySelector<HTMLInputElement>('#hero-emoji');
+  let reactions: ReactionManager | undefined;
   let index = 0;
   let timer: number | undefined;
   let swap: number | undefined;
@@ -31,17 +34,37 @@ export function startHeroRotation(doc: Document = document): { refresh: () => vo
     const width = label.getBoundingClientRect().width + (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
     if (width > 0) word.style.width = `${Math.ceil(width)}px`;
   };
-  const refresh = () => {
+  const refresh = (newWord = false) => {
     const value = heroWords[index]!;
     const prediction = analyze(value, { threshold: 0 }).highlights[0]!;
     const category = prediction.emotion ?? prediction.sentiment;
     const color = getPageTheme(heading)[category];
     label.textContent = value;
     word.dataset.category = category;
+    word.dataset.sentiment = prediction.sentiment;
+    if (prediction.emotion) word.dataset.emotion = prediction.emotion;
+    else delete word.dataset.emotion;
     word.style.backgroundColor = color.background;
     word.style.color = color.color;
+    word.style.setProperty('--textheat-bg', color.background);
+    word.style.setProperty('--textheat-fg', color.color);
     measure();
+    if (newWord) reactions?.reset(word);
+    else reactions?.configure({ emojiReactions: true, animate: true });
+    reactions?.trackFor(500);
   };
+  const toggleEmoji = () => {
+    reactions?.destroy(); reactions = undefined;
+    if (emojiToggle?.checked && !destroyed) {
+      // Visual headline words are aria-hidden in favor of a stable heading label.
+      reactions = new ReactionManager(doc, { emojiReactions: true, animate: true }, '#hero-emotion', true);
+      reactions.reveal(word);
+      reactions.trackFor(500);
+    }
+  };
+  emojiToggle?.addEventListener('change', toggleEmoji);
+  const repositionEmoji = () => reactions?.requestRefresh();
+  word.addEventListener('transitionend', repositionEmoji);
   const settle = () => {
     if (swap !== undefined) win.clearTimeout(swap);
     if (fade !== undefined) win.clearTimeout(fade);
@@ -49,14 +72,17 @@ export function startHeroRotation(doc: Document = document): { refresh: () => vo
     word.classList.remove('is-changing');
   };
   const advance = () => {
-    if (motion?.matches) { index = (index + 1) % heroWords.length; refresh(); return; }
+    if (motion?.matches) { index = (index + 1) % heroWords.length; refresh(true); reactions?.reveal(word); return; }
     word.classList.add('is-changing');
     swap = win.setTimeout(() => {
       swap = undefined;
       index = (index + 1) % heroWords.length;
-      refresh();
+      refresh(true);
       // Start width/color interpolation before revealing the replacement text.
-      fade = win.setTimeout(() => { fade = undefined; word.classList.remove('is-changing'); }, 80);
+      fade = win.setTimeout(() => {
+        fade = undefined; word.classList.remove('is-changing');
+        reactions?.reveal(word); reactions?.trackFor(500);
+      }, 80);
     }, 180);
   };
   const schedule = () => {
@@ -74,6 +100,7 @@ export function startHeroRotation(doc: Document = document): { refresh: () => vo
     measure();
     void word.offsetWidth;
     word.style.removeProperty('transition');
+    repositionEmoji();
   };
   win.addEventListener('resize', resize);
   void doc.fonts?.ready.then(resize);
@@ -81,6 +108,9 @@ export function startHeroRotation(doc: Document = document): { refresh: () => vo
     destroyed = true;
     if (timer !== undefined) win.clearInterval(timer);
     settle();
+    reactions?.destroy(); reactions = undefined;
+    emojiToggle?.removeEventListener('change', toggleEmoji);
+    word.removeEventListener('transitionend', repositionEmoji);
     motion?.removeEventListener?.('change', schedule);
     doc.removeEventListener('visibilitychange', schedule);
     win.removeEventListener('resize', resize);
@@ -88,5 +118,5 @@ export function startHeroRotation(doc: Document = document): { refresh: () => vo
   };
   win.addEventListener('pagehide', destroy);
   refresh(); schedule();
-  return { refresh, destroy };
+  return { refresh: () => refresh(), destroy };
 }

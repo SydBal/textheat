@@ -33,6 +33,8 @@ h1 { font: normal 76px/.99 Georgia, 'Times New Roman', serif; letter-spacing: -4
 .color-word svg { position: absolute; left: 0; bottom: -5px; width: 100%; height: 12px; fill: none; stroke: #e4b59f; stroke-width: 3; stroke-linecap: round; }
 .hero p { font-size: 14px; color: #777b72; line-height: 1.8; margin: 0; }
 .hero-badges { display: flex; gap: 24px; justify-content: center; margin-top: 24px; color: var(--muted); font-size: 10px; }
+.hero-emoji-toggle { display: inline-flex; align-items: center; justify-content: center; gap: 9px; margin-top: 20px; padding: 8px 12px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); font-size: 13px; cursor: pointer; }
+.hero-emoji-toggle input { margin: 0; accent-color: var(--accent); width: 16px; height: 16px; }
 .workspace { border: 1px solid var(--line); border-radius: 14px; background: var(--paper); overflow: visible; box-shadow: 0 8px 30px #25282304; }
 .workspace-heading { display: flex; justify-content: space-between; align-items: center; padding: 24px 26px 22px; }
 .small-label { color: var(--muted); }

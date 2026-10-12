@@ -24,14 +24,14 @@
 <body>
   <div class="page">
     <header class="topbar">
-      <a class="brand" href="./" aria-label="textheat home"><span class="brand-icon">t<span>°</span></span>textheat<span class="version">LOCAL / V0.1</span></a>
-      <nav aria-label="Main"><a href="#extension-download">Extension</a><a href="#privacy">Privacy</a><a href="#how-it-works">How it works <span>↗</span></a><button id="theme-toggle" class="icon-button" aria-label="Switch to dark theme">☾</button></nav>
+      <a class="brand" href="./" aria-label="textheat home"><span class="brand-icon">t<span>°</span></span>textheat</a>
+      <nav aria-label="Main"><a href="#extension-download">Extension</a><a href="#how-it-works">How it works <span>↗</span></a><a href="#privacy">Privacy</a><button id="theme-toggle" class="icon-button" aria-label="Switch to dark theme">☾</button></nav>
     </header>
     <main>
       <section class="hero">
-        <div class="eyebrow"><span class="status-dot"></span> SMALL ENGINE. FEELING WORDS.</div>
         <h1 id="hero-title" aria-label="Give emotional words a little color."><span class="hero-title-line" aria-hidden="true">Give <span id="hero-emotion" class="hero-emotion" style="background-color:#fdf5d9;color:#92400e"><span class="hero-emotion-text">happy</span></span> words</span><span class="hero-title-line" aria-hidden="true">a little <span class="color-word">color.<svg viewBox="0 0 210 14" aria-hidden="true"><path d="M3 10 Q100 -2 206 8"/></svg></span></span></h1>
         <p>A little clarity for the things we say. Find the feeling in your<br class="desktop-break"> text with a fast, private, self-contained highlighting engine.</p>
+        <label class="hero-emoji-toggle" for="hero-emoji"><input id="hero-emoji" type="checkbox"> Try emoji reactions <span aria-hidden="true">✨</span></label>
         <div class="hero-badges"><span>◈ No remote APIs</span><span>⌁ No required models</span><span>↯ Runs right here</span></div>
         <div class="hero-actions">
           <a class="download-button" href="./downloads/textheat-chrome.zip" download="textheat-chrome.zip">Download for Chrome <span aria-hidden="true">↓</span></a>
@@ -39,7 +39,7 @@
         </div>
       </section>
       <section class="workspace" aria-label="Interactive sentiment playground">
-        <div class="workspace-heading"><div><span class="small-label">THE PLAYGROUND</span><h2>Your words, under a new light.</h2></div><span class="live-label"><span class="status-dot"></span> LIVE ANALYSIS</span></div>
+        <div class="workspace-heading"><div><span class="small-label">THE PLAYGROUND</span></div><span class="live-label"><span class="status-dot"></span> LIVE ANALYSIS</span></div>
         <div class="editor-panel">
           <div class="panel-heading"><label for="input">Your text <span>Type to see the feeling.</span></label><div class="editor-meta"><span id="char-count">0 characters</span><span id="sentiment-label" class="sentiment-badge">Mixed</span></div></div>
           <div class="live-editor">
@@ -51,7 +51,7 @@
         </div>
         <div class="controls">
           <div class="threshold-control"><label for="threshold">Highlight strength <output id="threshold-value" for="threshold">0.30</output></label><div class="slider-row"><span>More nuance</span><input id="threshold" type="range" min="0" max="1" step="0.05" value="0.3"><span>Only the strongest</span></div></div>
-          <label class="toggle-control" for="tooltips"><span><strong>A little more context</strong><small>Hover highlights; full evidence below</small></span><input id="tooltips" type="checkbox" checked><span class="switch" aria-hidden="true"></span></label>
+          <label class="toggle-control" for="tooltips"><span><strong>Highlight Hover Context Tooltip</strong></span><input id="tooltips" type="checkbox" checked><span class="switch" aria-hidden="true"></span></label>
         </div>
       </section>
       <section class="legend" aria-label="Highlight color legend"><span class="small-label">THE PALETTE</span><div><span class="legend-item positive">Positive</span><span class="legend-item negative">Negative</span><span class="legend-item joy">Joy</span><span class="legend-item anger">Anger</span><span class="legend-item sadness">Sadness</span><span class="legend-item fear">Fear</span><span class="legend-item surprise">Surprise</span></div></section>

@@ -27,6 +27,8 @@ The distribution is the contents of extension-dist, not the source extension fol
 
 ## Required real Chrome smoke test
 
+- [ ] Verify Emoji reactions is Off on first install. Opt in from popup and options: newly revealed highlights burst once then retain one matching emoji; existing highlights get static badges. Scroll, resize, remove content, change sensitivity/theme, and turn Off/Clear. Confirm no residual particles/timers, no emoji additions to clipboard/editor text, and no changed highlight counts. Test OS reduced motion (static reactions), IME, links beneath overlays, and dense text in an actual Chrome tab.
+
 These checks are **not proved by mocked Chrome APIs or a development harness**. Run them on the final ZIP using an ordinary, non-administrator Chrome profile; do not enter credentials into an AI tool.
 
 - [ ] Unzip, open chrome://extensions, enable Developer mode, and Load unpacked from the extracted directory. Confirm name, icons, version, no manifest errors, and no service-worker errors.

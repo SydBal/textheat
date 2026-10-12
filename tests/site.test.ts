@@ -26,6 +26,12 @@ describe('public website', () => {
       expect(document.querySelectorAll(`[id="${id}"]`)).toHaveLength(1);
     }
     expect(document.querySelector('.hero')?.nextElementSibling?.classList.contains('workspace')).toBe(true);
+    expect(document.querySelector('.hero .eyebrow')).toBeNull();
+    expect(document.querySelector('.brand .version')).toBeNull();
+    expect(document.querySelector('#workspace-heading h2')).toBeNull();
+    expect(document.querySelector('.toggle-control strong')?.textContent).toBe('Highlight Hover Context Tooltip');
+    const navigation = [...document.querySelectorAll('nav[aria-label="Main"] a')].map(link => link.getAttribute('href'));
+    expect(navigation.indexOf('#how-it-works')).toBeLessThan(navigation.indexOf('#privacy'));
     expect(document.querySelectorAll('.workspace textarea')).toHaveLength(1);
     expect(document.querySelector('.live-editor #input')).not.toBeNull();
     expect(document.querySelector('.live-editor #output')?.getAttribute('aria-hidden')).toBe('true');
@@ -37,6 +43,10 @@ describe('public website', () => {
     expect(document.querySelector('#privacy')?.nextElementSibling?.id).toBe('extension-download');
     expect(document.querySelector('main')?.nextElementSibling?.tagName).toBe('FOOTER');
     const actions = document.querySelectorAll('.hero-actions a');
+    const emoji = document.querySelector<HTMLInputElement>('.hero #hero-emoji')!;
+    expect(emoji.type).toBe('checkbox'); expect(emoji.checked).toBe(false);
+    expect(document.querySelector('.hero > p')!.compareDocumentPosition(emoji) & 4).toBeTruthy();
+    expect(emoji.compareDocumentPosition(document.querySelector('.hero-actions')!) & 4).toBeTruthy();
     expect(actions).toHaveLength(2);
     expect(actions[0]?.getAttribute('href')).toBe('./downloads/textheat-chrome.zip');
     expect(actions[0]?.hasAttribute('download')).toBe(true);

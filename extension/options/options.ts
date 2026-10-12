@@ -7,7 +7,7 @@ function element<T extends HTMLElement>(id: string): T {
   if (!value) throw new Error(`Missing settings control: ${id}`);
   return value as T;
 }
-const booleans = ['animate', 'showTooltips', 'respectReducedMotion', 'processCode', 'processEditable', 'debug'] as const;
+const booleans = ['animate', 'showTooltips', 'emojiReactions', 'respectReducedMotion', 'processCode', 'processEditable', 'debug'] as const;
 let stored: StoredSettings = { settings: structuredClone(defaults), sites: {} };
 let busy = true;
 let saveWarning = '';

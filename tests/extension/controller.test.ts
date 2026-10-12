@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { analyze } from 'textheat';
 import { PageController } from '../../src/extension/controller';
+import { ReactionManager } from '../../src/extension/reactions';
 import { defaults } from '../../extension/shared/settings';
 
 class Observer {
@@ -32,6 +33,179 @@ beforeEach(() => {
 afterEach(() => { controller.destroy(); vi.useRealTimers(); vi.unstubAllGlobals(); document.body.replaceChildren(); });
 
 describe('progressive extension controller', () => {
+  it('bursts newly inserted text only on actual reveal after refresh and appearance updates, without replaying unchanged text', async () => {
+    document.body.innerHTML = '<article><p>wonderful</p></article>';
+    const geometry = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ top: 30, left: 40, right: 100, bottom: 50, width: 60, height: 20 } as DOMRect);
+    const originalAnimate = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'animate');
+    const animate = vi.fn(() => ({ cancel: vi.fn() }));
+    Object.defineProperty(HTMLElement.prototype, 'animate', { configurable: true, value: animate });
+    try {
+      const settings = { ...defaults, mode: 'auto' as const, emojiReactions: true };
+      controller.configure(settings); await visible(); await vi.advanceTimersByTimeAsync(1600);
+      const original = highlights()[0]!; expect(animate).toHaveBeenCalledTimes(5);
+      const paragraph = document.createElement('p'); paragraph.textContent = 'terrible';
+      document.querySelector('article')!.append(paragraph);
+      await work(); Observer.instances[0]!.trigger(paragraph); await work();
+      const fresh = paragraph.querySelector<HTMLElement>('[data-textheat-extension="highlight"]')!;
+      expect(fresh.dataset.textheatAnimationState).toBe('waiting');
+      controller.configure({ ...settings, theme: 'dark' });
+      document.dispatchEvent(new Event('scroll')); await work();
+      const overlay = document.querySelector('.textheat-extension-reactions')!.shadowRoot!;
+      expect(overlay.querySelectorAll('.badge')).toHaveLength(1);
+      expect(animate).toHaveBeenCalledTimes(5);
+      Observer.instances[1]!.trigger(fresh);
+      expect(overlay.querySelectorAll('.particle')).toHaveLength(4);
+      expect(animate).toHaveBeenCalledTimes(10);
+      await work(); Observer.instances[1]!.trigger(fresh); Observer.instances[1]!.trigger(original);
+      Observer.instances[0]!.all(); await work();
+      expect(highlights()[0]).toBe(original); expect(animate).toHaveBeenCalledTimes(10);
+      await vi.advanceTimersByTimeAsync(1600); expect(overlay.querySelectorAll('.particle')).toHaveLength(0);
+      controller.destroy(); expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      geometry.mockRestore();
+      if (originalAnimate) Object.defineProperty(HTMLElement.prototype, 'animate', originalAnimate);
+      else Reflect.deleteProperty(HTMLElement.prototype, 'animate');
+    }
+  });
+  it('preserves capped bursts through appearance updates and drains the second wave after highlight unobserve', async () => {
+    document.body.innerHTML = `<article>${'<p>wonderful</p>'.repeat(9)}</article>`;
+    const geometry = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ top: 30, left: 40, right: 100, bottom: 50, width: 60, height: 20 } as DOMRect);
+    const originalAnimate = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'animate');
+    const animate = vi.fn(() => ({ cancel: vi.fn() }));
+    Object.defineProperty(HTMLElement.prototype, 'animate', { configurable: true, value: animate });
+    try {
+      const settings = { ...defaults, mode: 'auto' as const, emojiReactions: true };
+      controller.configure(settings); await visible();
+      const overlay = document.querySelector('.textheat-extension-reactions')!.shadowRoot!;
+      expect(highlights()).toHaveLength(9); expect(Observer.instances[1]!.targets.size).toBe(0);
+      expect(overlay.querySelectorAll('.particle')).toHaveLength(32); expect(animate).toHaveBeenCalledTimes(40);
+      controller.configure({ ...settings, theme: 'dark', showTooltips: false });
+      expect(overlay.querySelectorAll('.particle')).toHaveLength(32); expect(animate).toHaveBeenCalledTimes(40);
+      await vi.advanceTimersByTimeAsync(1600);
+      expect(overlay.querySelectorAll('.particle')).toHaveLength(4); expect(animate).toHaveBeenCalledTimes(45);
+      await vi.advanceTimersByTimeAsync(1600);
+      expect(overlay.querySelectorAll('.particle')).toHaveLength(0); expect(overlay.querySelectorAll('.badge')).toHaveLength(9);
+      controller.destroy(); expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      geometry.mockRestore();
+      if (originalAnimate) Object.defineProperty(HTMLElement.prototype, 'animate', originalAnimate);
+      else Reflect.deleteProperty(HTMLElement.prototype, 'animate');
+    }
+  });
+  it('keeps an offscreen reaction requested by the highlight observer eligible after unobserve until scroll', async () => {
+    document.body.innerHTML = '<article><p>wonderful</p></article>';
+    const geometry = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ top: -100, left: 40, right: 100, bottom: -80, width: 60, height: 20 } as DOMRect);
+    const originalAnimate = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'animate');
+    const animate = vi.fn(() => ({ cancel: vi.fn() }));
+    Object.defineProperty(HTMLElement.prototype, 'animate', { configurable: true, value: animate });
+    try {
+      const settings = { ...defaults, mode: 'auto' as const, emojiReactions: true };
+      controller.configure(settings); await visible();
+      expect(Observer.instances[1]!.targets.size).toBe(0);
+      expect(highlights()[0]!.dataset.textheatAnimationState).toBe('visible');
+      controller.configure({ ...settings, theme: 'dark' }); await work();
+      expect(document.querySelector('.textheat-extension-reactions')).toBeNull(); expect(animate).not.toHaveBeenCalled();
+      geometry.mockReturnValue({ top: 30, left: 40, right: 100, bottom: 50, width: 60, height: 20 } as DOMRect);
+      document.dispatchEvent(new Event('scroll')); await work();
+      const overlay = document.querySelector('.textheat-extension-reactions')!.shadowRoot!;
+      expect(overlay.querySelectorAll('.particle')).toHaveLength(4); expect(animate).toHaveBeenCalledTimes(5);
+      await vi.advanceTimersByTimeAsync(1600);
+      document.dispatchEvent(new Event('scroll')); await work();
+      expect(overlay.querySelectorAll('.particle')).toHaveLength(0); expect(animate).toHaveBeenCalledTimes(5);
+      controller.destroy(); expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      geometry.mockRestore();
+      if (originalAnimate) Object.defineProperty(HTMLElement.prototype, 'animate', originalAnimate);
+      else Reflect.deleteProperty(HTMLElement.prototype, 'animate');
+    }
+  });
+  it.each([true, false])('uses explicit static registration only for synchronous rebuilds (animate=%s)', async animate => {
+    document.body.innerHTML = '<p>wonderful</p>';
+    const geometry = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ top: 30, left: 40, right: 100, bottom: 50, width: 60, height: 20 } as DOMRect);
+    const showStatic = vi.spyOn(ReactionManager.prototype, 'showStatic');
+    const reveal = vi.spyOn(ReactionManager.prototype, 'reveal');
+    try {
+      const settings = { ...defaults, mode: 'auto' as const, emojiReactions: true, animate };
+      controller.configure(settings); await visible();
+      expect(reveal).toHaveBeenCalled(); expect(showStatic).not.toHaveBeenCalled();
+      const original = highlights()[0]!; reveal.mockClear();
+      controller.configure({ ...settings, threshold: .1 });
+      const rebuilt = highlights()[0]!;
+      expect(rebuilt).not.toBe(original); expect(rebuilt.dataset.textheatAnimationState).toBe('visible');
+      expect(showStatic).toHaveBeenCalledWith(rebuilt); expect(reveal).not.toHaveBeenCalled();
+      const overlay = document.querySelector('.textheat-extension-reactions')!.shadowRoot!;
+      expect(overlay.querySelectorAll('.badge')).toHaveLength(1);
+      expect(overlay.querySelectorAll('.particle')).toHaveLength(0);
+    } finally { geometry.mockRestore(); showStatic.mockRestore(); reveal.mockRestore(); }
+  });
+  it('opts into static existing reactions without changing highlights or selection, and cleans on Off', async () => {
+    const geometry = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ top: 30, left: 40, right: 100, bottom: 50, width: 60, height: 20 } as DOMRect);
+    try {
+      const settings = { ...defaults, mode: 'auto' as const };
+      controller.configure(settings); await visible();
+      expect(document.querySelector('.textheat-extension-reactions')).toBeNull();
+      const spans = highlights(), source = document.querySelector('article')!, html = source.innerHTML;
+      const selection = document.getSelection()!, range = document.createRange();
+      range.selectNodeContents(spans[0]!); selection.addRange(range);
+      const selected = selection.toString(), anchor = selection.anchorNode;
+      controller.configure({ ...settings, emojiReactions: true });
+      const host = document.querySelector('.textheat-extension-reactions')!;
+      expect(host.shadowRoot!.querySelectorAll('.badge')).toHaveLength(spans.length);
+      expect(host.shadowRoot!.querySelectorAll('.particle')).toHaveLength(0);
+      expect(source.innerHTML).toBe(html); expect(highlights()).toEqual(spans);
+      expect(selection.toString()).toBe(selected); expect(selection.anchorNode).toBe(anchor);
+      controller.configure({ ...settings, emojiReactions: true, theme: 'dark' });
+      expect(host.shadowRoot!.querySelectorAll('.particle')).toHaveLength(0);
+      expect((host.shadowRoot!.querySelector('.badge') as HTMLElement).style.getPropertyValue('--reaction-bg')).toBe(spans[0]!.style.getPropertyValue('--textheat-bg'));
+      controller.configure({ ...settings, emojiReactions: true, threshold: .9 });
+      expect(host.shadowRoot!.querySelectorAll('.badge')).toHaveLength(highlights().length);
+      expect(host.shadowRoot!.querySelectorAll('.particle')).toHaveLength(0);
+      controller.configure({ ...settings, emojiReactions: true, mode: 'off' }); await work();
+      expect(document.querySelector('.textheat-extension-reactions')).toBeNull(); expect(vi.getTimerCount()).toBe(0);
+    } finally { geometry.mockRestore(); }
+  });
+  it('bursts only new revealed spans and ignores respectReducedMotion opt-out for emoji accessibility', async () => {
+    const geometry = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ top: 30, left: 40, right: 100, bottom: 50, width: 60, height: 20 } as DOMRect);
+    const originalAnimate = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'animate');
+    const animate = vi.fn(() => ({ cancel: vi.fn() }));
+    Object.defineProperty(HTMLElement.prototype, 'animate', { configurable: true, value: animate });
+    try {
+      const settings = { ...defaults, mode: 'auto' as const, emojiReactions: true, respectReducedMotion: false };
+      controller.configure(settings); await visible();
+      const host = document.querySelector('.textheat-extension-reactions')!;
+      expect(host.shadowRoot!.querySelectorAll('.particle').length).toBeGreaterThan(0);
+      const calls = animate.mock.calls.length;
+      for (const span of highlights()) Observer.instances[1]!.trigger(span);
+      expect(animate).toHaveBeenCalledTimes(calls);
+      controller.configure({ ...settings, animate: false });
+      expect(host.shadowRoot!.querySelectorAll('.particle')).toHaveLength(0);
+      controller.disable(); await work(); expect(vi.getTimerCount()).toBe(0);
+      vi.stubGlobal('matchMedia', () => ({ matches: true }));
+      animate.mockClear(); controller.configure({ ...settings, theme: 'dark' }); await visible();
+      const reducedHost = document.querySelector('.textheat-extension-reactions')!;
+      expect(reducedHost.shadowRoot!.querySelectorAll('.badge').length).toBeGreaterThan(0);
+      expect(reducedHost.shadowRoot!.querySelectorAll('.particle')).toHaveLength(0);
+      expect(animate).not.toHaveBeenCalled();
+      document.querySelector('article')!.remove(); await work();
+      expect(reducedHost.shadowRoot!.querySelectorAll('.badge')).toHaveLength(0);
+      controller.destroy(); expect(document.querySelector('.textheat-extension-reactions')).toBeNull();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      geometry.mockRestore();
+      if (originalAnimate) Object.defineProperty(HTMLElement.prototype, 'animate', originalAnimate);
+      else Reflect.deleteProperty(HTMLElement.prototype, 'animate');
+    }
+  });
+  it('does not add emoji UI to Off, inactive Manual or selection panels/native fields', async () => {
+    controller.configure({ ...defaults, emojiReactions: true }); await work();
+    expect(document.querySelector('.textheat-extension-reactions')).toBeNull();
+    controller.configure({ ...defaults, mode: 'manual', emojiReactions: true });
+    document.body.innerHTML = '<textarea>wonderful</textarea>';
+    document.querySelector('textarea')!.focus(); controller.action('CHECK_SELECTION'); await work();
+    expect(document.querySelector('.textheat-extension-panel')).not.toBeNull();
+    expect(document.querySelector('.textheat-extension-reactions')).toBeNull();
+    expect(document.querySelector('textarea')!.value).toBe('wonderful');
+  });
   it('resumes Auto after page lifecycle teardown even when restored settings are identical', async () => {
     const settings = { ...defaults, mode: 'auto' as const };
     controller.configure(settings); await visible();

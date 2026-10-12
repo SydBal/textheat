@@ -1,4 +1,9 @@
 [data-textheat-extension="wrapper"] { display: contents !important; }
+[data-textheat-extension="ui"].textheat-extension-reactions {
+  all: initial !important; position: fixed !important; inset: 0 !important;
+  pointer-events: none !important; user-select: none !important;
+  contain: strict !important; overflow: hidden !important; z-index: 2147483646 !important;
+}
 [data-textheat-extension="highlight"] {
   background-color: transparent !important; background-image: linear-gradient(var(--textheat-bg),var(--textheat-bg)) !important;
   background-repeat: no-repeat !important; background-size: 0% 100% !important;

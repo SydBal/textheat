@@ -5,10 +5,12 @@ import type { PageAction, PageState } from '../../extension/shared/messages';
 import { editingRoot, eligibleElement, eligibleField, eligibleText } from './exclusions';
 import { extensionTheme, marker, recolorHighlights, replaceText, restoreWrapper, updateTooltips } from './renderer';
 import type { Replacement } from './renderer';
+import { ReactionManager } from './reactions';
 
 /** Progressive, bounded page jobs. No page text ever leaves this document. */
 export class PageController {
-  private settings = structuredClone(defaults);
+  private settings: ExtensionSettings = structuredClone(defaults);
+  private reactions?: ReactionManager;
   private active = false;
   private suspended = false;
   private picking = false;
@@ -79,6 +81,7 @@ export class PageController {
     for (const span of wrapper.querySelectorAll('[data-textheat-extension="highlight"]')) this.animation?.unobserve(span);
     if (original) this.processed.delete(original.original);
     restoreWrapper(wrapper, original);
+    this.reactions?.prune();
   }
   private refreshPalette = () => { this.queuePalettes(this.doc.documentElement); };
   constructor(private doc: Document = document) {}
@@ -86,6 +89,7 @@ export class PageController {
   state(): PageState { return { mode: this.settings.mode, pageEnabled: this.active, picking: this.picking, highlights: this.doc.querySelectorAll('[data-textheat-extension="highlight"]').length, processed: this.processedCount }; }
   configure(value: ExtensionSettings): void {
     const wasActive = this.active && this.settings.mode === 'manual';
+    // The parent owns persistence/UI; absent or invalid opt-in is always Off.
     const settings = validateSettings(value);
     // Storage notifications and save reconciliation can deliver the same update
     // twice. Never cancel Manual tools or rebuild the DOM for a no-op update.
@@ -114,6 +118,7 @@ export class PageController {
             this.enqueueRoot(this.doc.body);
           }
           this.updatePresentation();
+          this.reactions?.configure(this.settings);
         }
       } finally { this.observeMutations(); }
       return;
@@ -125,6 +130,7 @@ export class PageController {
   enable(): void {
     if (this.active || this.settings.mode === 'off') return;
     this.active = true;
+    this.reactions = new ReactionManager(this.doc, this.settings);
     this.doc.addEventListener('compositionstart', this.compositionStart, true);
     this.doc.addEventListener('compositionend', this.compositionEnd, true);
     const win = this.doc.defaultView!;
@@ -189,6 +195,7 @@ export class PageController {
   }
   disable(): void {
     this.active = false; this.cancelPick(); this.closePanel();
+    this.reactions?.destroy(); this.reactions = undefined;
     this.near?.disconnect(); this.animation?.disconnect(); this.mutations?.disconnect();
     this.near = undefined; this.animation = undefined; this.mutations = undefined;
     this.colorScheme?.removeEventListener?.('change', this.refreshPalette); this.colorScheme = undefined;
@@ -303,7 +310,10 @@ export class PageController {
         for (const child of replacement.wrapper.childNodes) this.generated.add(child);
         for (const span of replacement.highlights) {
           this.count++;
-          if (alreadyPresented) span.dataset.textheatAnimationState = 'visible';
+          if (alreadyPresented) {
+            span.dataset.textheatAnimationState = 'visible';
+            this.reactions?.showStatic(span);
+          }
           else if (!this.animation || this.reducedMotion() || !this.settings.animate) this.reveal(span);
           else this.animation.observe(span);
         }
@@ -313,9 +323,12 @@ export class PageController {
   private reducedMotion(): boolean { return this.settings.respectReducedMotion && !!this.doc.defaultView?.matchMedia?.('(prefers-reduced-motion: reduce)').matches; }
   private reveal(span: HTMLElement): void {
     if (this.isComposing(span)) return;
+    // Reactions have their own once flags; settled highlights still need badges
+    // after opt-in, independently of the highlight animation early return.
+    this.reactions?.reveal(span);
     if (span.dataset.textheatAnimationState !== 'waiting') return;
     this.animation?.unobserve(span);
-    if (!this.settings.animate || this.reducedMotion()) { span.dataset.textheatAnimationState = 'visible'; return; }
+    if (!this.settings.animate || this.reducedMotion() || typeof this.doc.defaultView!.requestAnimationFrame !== 'function') { span.dataset.textheatAnimationState = 'visible'; return; }
     span.dataset.textheatAnimationState = 'animating';
     const frame = this.doc.defaultView!.requestAnimationFrame(() => {
       this.animationFrames.delete(frame);
@@ -377,6 +390,8 @@ export class PageController {
       this.near?.unobserve(target); this.nearTargets.delete(target);
       this.seen.delete(target); this.visible.delete(target); this.deferredRebuild.delete(target);
     }
+    this.reactions?.prune();
+    this.reactions?.requestRefresh();
   }
 
   private pickClick = (event: MouseEvent) => {

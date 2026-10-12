@@ -203,7 +203,7 @@ describe('popup Chrome integration', () => {
     expect(mock.scripting.executeScript).not.toHaveBeenCalled();
     expect(mock.tabs.sendMessage.mock.calls.some(([, message]) => message.type === 'PAGE_ACTION')).toBe(false);
   });
-  it.each(['processCode', 'processEditable'] as const)('exposes and persists the %s menu opt-in', async key => {
+  it.each(['processCode', 'processEditable', 'emojiReactions'] as const)('exposes and persists the %s menu opt-in', async key => {
     const mock = await popup();
     const checkbox = control<HTMLInputElement>(key);
     expect(checkbox.checked).toBe(false);

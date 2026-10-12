@@ -8,11 +8,38 @@ afterEach(() => { cleanup?.(); cleanup = undefined; vi.useRealTimers(); vi.unstu
 function setup(reduced = false) {
   vi.useFakeTimers();
   vi.stubGlobal('matchMedia', () => ({ matches: reduced, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
-  document.body.innerHTML = '<h1 id="hero-title" aria-label="Give emotional words a little color."><span id="hero-emotion"><span class="hero-emotion-text"></span></span></h1>';
+  document.body.innerHTML = '<h1 id="hero-title" aria-label="Give emotional words a little color."><span aria-hidden="true"><span id="hero-emotion"><span class="hero-emotion-text"></span></span></span></h1><input id="hero-emoji" type="checkbox">';
   const rotation = startHeroRotation(); cleanup = rotation.destroy;
   return { rotation, word: document.querySelector<HTMLElement>('#hero-emotion')!, heading: document.querySelector<HTMLElement>('h1')! };
 }
 describe('hero emotion demonstration', () => {
+  it('keeps emoji preview off by default and toggles matching reactions without changing the headline text', () => {
+    const { word, rotation } = setup();
+    vi.spyOn(word, 'getBoundingClientRect').mockReturnValue({ left: 10, right: 100, top: 50, bottom: 90, width: 90, height: 40 } as DOMRect);
+    const toggle = document.querySelector<HTMLInputElement>('#hero-emoji')!;
+    expect(toggle.checked).toBe(false); expect(document.querySelector('.textheat-extension-reactions')).toBeNull();
+    toggle.checked = true; toggle.dispatchEvent(new Event('change'));
+    const overlay = () => document.querySelector('.textheat-extension-reactions')?.shadowRoot;
+    expect(overlay()?.querySelector('.badge')?.textContent).toBe('😊');
+    expect(word.textContent).toBe('happy');
+    vi.advanceTimersByTime(2860);
+    expect(word.textContent).toBe('angry');
+    expect(overlay()?.querySelector('.badge')?.textContent).toBe('😠');
+    toggle.checked = false; toggle.dispatchEvent(new Event('change'));
+    expect(overlay()).toBeUndefined();
+    rotation.destroy(); expect(vi.getTimerCount()).toBe(0);
+  });
+  it('shows only a static reaction for reduced motion and removes it on teardown', () => {
+    const { word, rotation } = setup(true);
+    vi.spyOn(word, 'getBoundingClientRect').mockReturnValue({ left: 10, right: 100, top: 50, bottom: 90, width: 90, height: 40 } as DOMRect);
+    const toggle = document.querySelector<HTMLInputElement>('#hero-emoji')!;
+    toggle.checked = true; toggle.dispatchEvent(new Event('change'));
+    const shadow = document.querySelector('.textheat-extension-reactions')!.shadowRoot!;
+    expect(shadow.querySelectorAll('.particle')).toHaveLength(0);
+    expect(shadow.querySelector<HTMLElement>('.badge')!.hidden).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+    rotation.destroy(); expect(document.querySelector('.textheat-extension-reactions')).toBeNull();
+  });
   it('cycles real dictionary words with the correct emotion or polarity colors and loops', () => {
     expect(heroWords.length).toBeGreaterThan(150);
     expect(new Set(heroWords).size).toBe(heroWords.length);

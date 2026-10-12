@@ -3,12 +3,15 @@ import { defaults, effectiveSettings, validateSettings } from '../../extension/s
 import { readFileSync } from 'node:fs';
 describe('extension settings and permission contract', () => {
   it('defaults Off, isolates settings, and applies per-site disabling', () => {
+    expect(defaults.emojiReactions).toBe(false);
+    expect(validateSettings({ mode: 'auto' }).emojiReactions).toBe(false);
+    expect(validateSettings({ emojiReactions: true }).emojiReactions).toBe(true);
     const settings = validateSettings({ mode: 'auto' }); settings.customTheme.positive = { background: '#000000', color: '#FFFFFF' };
     expect(defaults.customTheme).toEqual({});
     expect(effectiveSettings({ settings, sites: { 'example.com': { enabled: false } } }, 'example.com').mode).toBe('off');
     expect(effectiveSettings({ settings, sites: { 'example.com': { enabled: true, threshold: 0.8 } } }, 'example.com').threshold).toBe(0.8);
   });
-  it.each([{ mode: 'bad' }, { threshold: NaN }, { threshold: 2 }, { preloadPx: -1 }, { animate: 'yes' }, { processEditable: 'yes' }, { customTheme: { positive: { background: 'url(x)', color: '#FFFFFF' } } }])('rejects unsafe settings %#', input => {
+  it.each([{ mode: 'bad' }, { threshold: NaN }, { threshold: 2 }, { preloadPx: -1 }, { animate: 'yes' }, { processEditable: 'yes' }, { emojiReactions: 'yes' }, { customTheme: { positive: { background: 'url(x)', color: '#FFFFFF' } } }])('rejects unsafe settings %#', input => {
     expect(() => validateSettings(input)).toThrow();
   });
   it('uses MV3 with explicit hotkeys and optional—not required—site access', () => {

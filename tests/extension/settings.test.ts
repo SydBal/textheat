@@ -8,7 +8,7 @@ describe('extension settings and permission contract', () => {
     expect(effectiveSettings({ settings, sites: { 'example.com': { enabled: false } } }, 'example.com').mode).toBe('off');
     expect(effectiveSettings({ settings, sites: { 'example.com': { enabled: true, threshold: 0.8 } } }, 'example.com').threshold).toBe(0.8);
   });
-  it.each([{ mode: 'bad' }, { threshold: NaN }, { threshold: 2 }, { preloadPx: -1 }, { animate: 'yes' }, { customTheme: { positive: { background: 'url(x)', color: '#FFFFFF' } } }])('rejects unsafe settings %#', input => {
+  it.each([{ mode: 'bad' }, { threshold: NaN }, { threshold: 2 }, { preloadPx: -1 }, { animate: 'yes' }, { processEditable: 'yes' }, { customTheme: { positive: { background: 'url(x)', color: '#FFFFFF' } } }])('rejects unsafe settings %#', input => {
     expect(() => validateSettings(input)).toThrow();
   });
   it('uses MV3 with explicit hotkeys and optional—not required—site access', () => {

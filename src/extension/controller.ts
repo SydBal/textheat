@@ -2,7 +2,7 @@ import { analyze, getTheme, renderDOM } from 'textheat/browser';
 import type { ExtensionSettings } from '../../extension/shared/settings';
 import { defaults, validateSettings } from '../../extension/shared/settings';
 import type { PageAction, PageState } from '../../extension/shared/messages';
-import { eligibleElement, eligibleText } from './exclusions';
+import { editingRoot, eligibleElement, eligibleField, eligibleText } from './exclusions';
 import { extensionTheme, marker, recolorHighlights, replaceText, restoreWrapper } from './renderer';
 import type { Replacement } from './renderer';
 
@@ -10,6 +10,7 @@ import type { Replacement } from './renderer';
 export class PageController {
   private settings = structuredClone(defaults);
   private active = false;
+  private suspended = false;
   private picking = false;
   private processed = new WeakMap<Text, string>();
   private originals = new WeakMap<Element, Replacement>();
@@ -33,6 +34,45 @@ export class PageController {
   private processedCount = 0;
   private animationFrames = new Set<number>();
   private colorScheme?: MediaQueryList;
+  private composing = new Set<Element>();
+  private deferredRestore = new Set<Element>();
+  private compositionStart = (event: CompositionEvent) => {
+    const target = event.target as Element;
+    const root = target?.nodeType === 1 && editingRoot(target);
+    if (root) this.composing.add(root);
+  };
+  private compositionEnd = (event: CompositionEvent) => {
+    // Drain final IME records while the composing guard is still in force.
+    if (this.mutations) this.changed(this.mutations.takeRecords());
+    const target = event.target as Element;
+    for (const root of this.composing) if (target?.nodeType === 1 && (root === target || root.contains(target))) {
+      this.composing.delete(root);
+      for (const wrapper of this.deferredRestore) if (!this.isComposing(wrapper)) {
+        this.deferredRestore.delete(wrapper); this.restore(wrapper);
+      }
+      if (this.active) {
+        this.enqueueRoot(root); this.queuePalettes(root);
+        for (const span of root.querySelectorAll<HTMLElement>('[data-textheat-extension="highlight"]')) {
+          if (span.dataset.textheatAnimationState === 'animating') span.dataset.textheatAnimationState = 'waiting';
+          this.reveal(span);
+        }
+      }
+    }
+    if (!this.active && !this.composing.size) this.removeCompositionListeners();
+  };
+  private isComposing(node: Node): boolean {
+    return [...this.composing].some(root => root.contains(node) || node.contains(root));
+  }
+  private removeCompositionListeners(): void {
+    this.doc.removeEventListener('compositionstart', this.compositionStart, true);
+    this.doc.removeEventListener('compositionend', this.compositionEnd, true);
+  }
+  private restore(wrapper: Element, original?: Replacement): void {
+    if (this.isComposing(wrapper)) { this.deferredRestore.add(wrapper); return; }
+    for (const span of wrapper.querySelectorAll('[data-textheat-extension="highlight"]')) this.animation?.unobserve(span);
+    if (original) this.processed.delete(original.original);
+    restoreWrapper(wrapper, original);
+  }
   private refreshPalette = () => { this.queuePalettes(this.doc.documentElement); };
   constructor(private doc: Document = document) {}
 
@@ -42,13 +82,16 @@ export class PageController {
     const settings = validateSettings(value);
     // Storage notifications and save reconciliation can deliver the same update
     // twice. Never cancel Manual tools or rebuild the DOM for a no-op update.
-    if (JSON.stringify(settings) === JSON.stringify(this.settings)) return;
+    if (!this.suspended && JSON.stringify(settings) === JSON.stringify(this.settings)) return;
+    this.suspended = false;
     this.disable(); this.settings = settings;
     if (settings.mode === 'auto' || settings.mode === 'manual' && wasActive) this.enable();
   }
   enable(): void {
     if (this.active || this.settings.mode === 'off') return;
     this.active = true;
+    this.doc.addEventListener('compositionstart', this.compositionStart, true);
+    this.doc.addEventListener('compositionend', this.compositionEnd, true);
     const win = this.doc.defaultView!;
     if (typeof win.IntersectionObserver === 'function') {
       this.near = new win.IntersectionObserver(entries => {
@@ -80,12 +123,13 @@ export class PageController {
     for (const frame of this.animationFrames) win.cancelAnimationFrame(frame);
     this.animationFrames.clear();
     this.roots = []; this.jobs = []; this.walker = undefined;
-    for (const wrapper of this.doc.querySelectorAll(marker)) restoreWrapper(wrapper, this.originals.get(wrapper));
+    for (const wrapper of this.doc.querySelectorAll(marker)) this.restore(wrapper, this.originals.get(wrapper));
+    if (!this.composing.size) this.removeCompositionListeners();
     this.processed = new WeakMap(); this.originals = new WeakMap(); this.seen = new WeakSet();
     this.generated = new WeakSet(); this.visible = new WeakSet(); this.queuedRoots = new WeakSet(); this.queuedJobs = new WeakSet();
     this.count = 0; this.processedCount = 0;
   }
-  destroy(): void { this.disable(); }
+  destroy(): void { this.disable(); this.suspended = true; }
   action(action: PageAction): void {
     if (this.settings.mode === 'off') return;
     if (action === 'CLEAR_PAGE') { this.disable(); return; }
@@ -94,7 +138,11 @@ export class PageController {
     if (action === 'PICK_TEXT') { if (this.picking) this.cancelPick(); else this.startPick(); }
     if (action === 'CHECK_SELECTION') {
       const selected = this.doc.getSelection();
-      const value = selected && this.readSelection(selected);
+      const field = this.doc.activeElement;
+      // A native control's value is not represented by document Selection.
+      const value = field?.matches('input,textarea')
+        ? eligibleField(field, this.settings) ? this.readFieldSelection(field) : ''
+        : selected && this.readSelection(selected);
       if (value?.trim()) this.showPanel(value);
       else this.showPanel('', 'Select non-editable page text first, then use the selection shortcut.');
     }
@@ -145,14 +193,13 @@ export class PageController {
     if (!this.near || this.visible.has(parent)) this.queueJob(parent);
   }
   private processElement(element: Element): void {
+    if (this.isComposing(element)) return;
     if (!eligibleElement(element, this.settings)) {
       // A page may become hidden/editable after it was highlighted. Undo our
       // direct wrappers before its editor starts handling the subtree.
       for (const child of [...element.children]) if (child.matches(marker)) {
-        for (const span of child.querySelectorAll('[data-textheat-extension="highlight"]')) this.animation?.unobserve(span);
         const original = this.originals.get(child);
-        if (original) this.processed.delete(original.original);
-        restoreWrapper(child, original);
+        this.restore(child, original);
       }
       return;
     }
@@ -185,13 +232,14 @@ export class PageController {
   }
   private reducedMotion(): boolean { return this.settings.respectReducedMotion && !!this.doc.defaultView?.matchMedia?.('(prefers-reduced-motion: reduce)').matches; }
   private reveal(span: HTMLElement): void {
+    if (this.isComposing(span)) return;
     if (span.dataset.textheatAnimationState !== 'waiting') return;
     this.animation?.unobserve(span);
     if (!this.settings.animate || this.reducedMotion()) { span.dataset.textheatAnimationState = 'visible'; return; }
     span.dataset.textheatAnimationState = 'animating';
     const frame = this.doc.defaultView!.requestAnimationFrame(() => {
       this.animationFrames.delete(frame);
-      if (span.isConnected && this.active) span.dataset.textheatAnimationState = 'visible';
+      if (span.isConnected && this.active && !this.isComposing(span)) span.dataset.textheatAnimationState = 'visible';
     });
     this.animationFrames.add(frame);
   }
@@ -204,6 +252,10 @@ export class PageController {
     for (const record of records) {
       const parent = record.target.nodeType === 1 ? record.target as Element : record.target.parentElement;
       const owner = parent?.closest(marker);
+      if (this.isComposing(record.target)) {
+        if (owner) this.deferredRestore.add(owner);
+        continue;
+      }
       if (owner) {
         // Animation attributes are filtered out; genuine page edits need unwrapping/reanalysis.
         if (record.type !== 'attributes' || record.target === owner) refresh.add(owner);
@@ -233,12 +285,17 @@ export class PageController {
       const parent = wrapper.parentElement;
       this.count = Math.max(0, this.count - wrapper.querySelectorAll('[data-textheat-extension="highlight"]').length);
       for (const span of wrapper.querySelectorAll('[data-textheat-extension="highlight"]')) this.animation?.unobserve(span);
-      restoreWrapper(wrapper); this.enqueueRoot(parent);
+      this.restore(wrapper); this.enqueueRoot(parent);
     }
   }
 
   private pickClick = (event: MouseEvent) => {
     const target = event.target as Element | null;
+    const field = target?.closest('input,textarea');
+    if (field && eligibleField(field, this.settings)) {
+      event.preventDefault(); event.stopPropagation(); this.cancelPick();
+      this.showPanel(field.value.slice(0, 12000)); return;
+    }
     if (target?.closest?.('a,button,input,select,textarea,[data-textheat-extension="ui"]')) return;
     const element = (event.target as Element | null)?.closest?.('p,li,blockquote,h1,h2,h3,h4,h5,h6,td,th,figcaption') ?? event.target as Element;
     if (!element || !eligibleElement(element, this.settings) || element.closest('a,button,input,select,textarea')) return;
@@ -292,6 +349,11 @@ export class PageController {
       node = walker.nextNode();
     }
     return steps >= 2000 ? '' : value;
+  }
+  private readFieldSelection(field: HTMLInputElement | HTMLTextAreaElement): string {
+    // email has no selection API in browsers; do not guess or read its full value.
+    const start = field.selectionStart, end = field.selectionEnd;
+    return start === null || end === null ? '' : field.value.slice(start, end).slice(0, 12000);
   }
   private closePanel(): void {
     const hadFocus = !!this.panel?.shadowRoot?.activeElement;

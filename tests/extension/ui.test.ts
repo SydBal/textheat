@@ -166,4 +166,12 @@ describe('popup Chrome integration', () => {
     expect(mock.scripting.executeScript).not.toHaveBeenCalled();
     expect(mock.tabs.sendMessage.mock.calls.some(([, message]) => message.type === 'PAGE_ACTION')).toBe(false);
   });
+  it.each(['processCode', 'processEditable'] as const)('exposes and persists the %s menu opt-in', async key => {
+    const mock = await popup();
+    const checkbox = control<HTMLInputElement>(key);
+    expect(checkbox.checked).toBe(false);
+    checkbox.checked = true; checkbox.dispatchEvent(new Event('change', { bubbles: true })); await flush();
+    expect(mock.runtime.sendMessage).toHaveBeenCalledWith({ type: 'SAVE_SETTINGS', settings: { [key]: true } });
+    expect(mock.stored().settings[key]).toBe(true); expect(checkbox.checked).toBe(true);
+  });
 });

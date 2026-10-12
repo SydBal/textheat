@@ -7,7 +7,7 @@ import type { ExtensionSettings, StoredSettings } from '../../extension/shared/s
 import type { ExtensionMessage, ExtensionResponse } from '../../extension/shared/messages';
 
 const fixture = readFileSync(resolve(process.cwd(), 'extension/options/options.html'), 'utf8');
-const booleanKeys = ['animate', 'showTooltips', 'respectReducedMotion', 'processCode', 'debug'] as const;
+const booleanKeys = ['animate', 'showTooltips', 'respectReducedMotion', 'processCode', 'processEditable', 'debug'] as const;
 const palette = { positive: { background: '#ABCDEF', color: '#012ABC' } };
 
 async function flush(): Promise<void> {
@@ -131,7 +131,7 @@ describe('options settings integration', () => {
     await flush();
     const expected = {
       ...defaults, mode: 'manual', theme: 'dark', threshold: 0.72, preloadPx: 999,
-      animate: false, showTooltips: true, respectReducedMotion: false, processCode: true, debug: true
+      animate: false, showTooltips: true, respectReducedMotion: false, processCode: true, processEditable: true, debug: true
     };
     expect(validity).toHaveBeenCalledOnce();
     expect(mock.runtime.sendMessage).toHaveBeenLastCalledWith({ type: 'SAVE_SETTINGS', settings: expected });

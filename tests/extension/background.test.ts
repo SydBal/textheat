@@ -135,6 +135,33 @@ describe('background Chrome integration', () => {
     expect(mock.scripting.executeScript).not.toHaveBeenCalled();
   });
 
+  it.each(['options/options.html', 'popup/popup.html'])('allows own tab-hosted %s to save global and site settings', async path => {
+    const mock = await background();
+    const sender = { id: 'textheat-test', url: `chrome-extension://textheat-test/${path}`, tab: { id: 42 } as chrome.tabs.Tab };
+    const global = await mock.message({ type: 'SAVE_SETTINGS', settings: { threshold: 0.65, theme: 'dark' } }, sender);
+    expect(global.ok).toBe(true);
+    expect(global.stored?.settings.threshold).toBe(0.65);
+    const site = await mock.message({ type: 'SAVE_SITE', hostname: 'example.com', settings: { enabled: false } }, sender);
+    expect(site.ok).toBe(true);
+    expect(site.stored?.sites['example.com']).toEqual({ enabled: false });
+    expect(mock.storage.local.set).toHaveBeenCalledTimes(2);
+  });
+  it.each([
+    'https://example.com/options/options.html',
+    'chrome-extension://foreign-extension/options/options.html',
+    'chrome-extension://textheat-test/content/content.html',
+    'https://example.com/?url=chrome-extension://textheat-test/options/options.html'
+  ])('rejects unauthorized tab document %s even with an own-extension sender ID', async url => {
+    const mock = await background();
+    const sender = { id: 'textheat-test', url, tab: { id: 42 } as chrome.tabs.Tab };
+    for (const message of [
+      { type: 'SAVE_SETTINGS', settings: { mode: 'auto' } },
+      { type: 'SAVE_SITE', hostname: 'example.com', settings: { enabled: false } }
+    ] satisfies ExtensionMessage[]) {
+      expect(await mock.message(message, sender)).toEqual({ ok: false, error: 'Not authorized' });
+    }
+    expect(mock.storage.local.set).not.toHaveBeenCalled();
+  });
   it('serializes read-modify-write and reconciliation without losing concurrent updates or blocking bootstrap GET', async () => {
     const mock = await background();
     const gate = deferred();

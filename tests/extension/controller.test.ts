@@ -31,6 +31,28 @@ beforeEach(() => {
 afterEach(() => { controller.destroy(); vi.useRealTimers(); vi.unstubAllGlobals(); document.body.replaceChildren(); });
 
 describe('progressive extension controller', () => {
+  it('resumes Auto after page lifecycle teardown even when restored settings are identical', async () => {
+    const settings = { ...defaults, mode: 'auto' as const };
+    controller.configure(settings); await visible();
+    expect(highlights().length).toBeGreaterThan(0);
+    controller.destroy(); expect(highlights()).toHaveLength(0);
+    controller.configure(structuredClone(settings)); await visible();
+    expect(controller.state().pageEnabled).toBe(true);
+    expect(highlights().length).toBeGreaterThan(0);
+    controller.action('CLEAR_PAGE');
+    controller.configure(structuredClone(settings)); await work();
+    expect(controller.state().pageEnabled).toBe(false);
+    expect(highlights()).toHaveLength(0);
+  });
+  it('does not restore an active Manual page automatically after lifecycle teardown', async () => {
+    const settings = { ...defaults, mode: 'manual' as const };
+    controller.configure(settings); controller.action('TOGGLE_PAGE'); await visible();
+    controller.destroy(); controller.configure(structuredClone(settings)); await work();
+    expect(controller.state().mode).toBe('manual');
+    expect(controller.state().pageEnabled).toBe(false);
+    controller.action('TOGGLE_PAGE'); await visible();
+    expect(highlights().length).toBeGreaterThan(0);
+  });
   it('preserves Manual tools and existing node identity on identical settings broadcasts', async () => {
     const settings = { ...defaults, mode: 'manual' as const };
     controller.configure(settings); controller.action('TOGGLE_PAGE'); await visible();
@@ -50,9 +72,9 @@ describe('progressive extension controller', () => {
   });
   it('waits for near visibility, animates once on actual visibility, and matches core analysis', async () => {
     const original = document.querySelector('#review')!.textContent!;
-    controller.configure({ ...defaults, mode: 'auto' }); await work();
+    controller.configure({ ...defaults, mode: 'auto', preloadPx: 0 }); await work();
     expect(highlights()).toHaveLength(0);
-    expect(Observer.instances[0]!.options!.rootMargin).toBe('300px 0px');
+    expect(Observer.instances[0]!.options!.rootMargin).toBe('0px 0px');
     Observer.instances[0]!.trigger(document.querySelector('#review')!); await work();
     expect(highlights().map(p => p.textContent)).toEqual(analyze(original).highlights.map(p => p.text));
     expect(highlights()[0]!.dataset.textheatAnimationState).toBe('waiting');
@@ -225,5 +247,154 @@ describe('progressive extension controller', () => {
     expect(highlights().every(p => ['#000000', '#FFFFFF'].includes(p.style.getPropertyValue('--textheat-bg')))).toBe(true);
     controller.configure({ ...defaults, mode: 'auto', theme: 'custom', customTheme: { positive: { background: '#ABCDEF', color: '#123456' } } }); await visible();
     expect(highlights().find(p => p.textContent === 'good')!.style.getPropertyValue('--textheat-bg')).toBe('#ABCDEF');
+  });
+
+  it('opt-in highlights rich editors without replacing their markup and preserves backward selections through restore', async () => {
+    document.body.innerHTML = '<div id="editor" contenteditable><p id="p">wonderful <b id="bold">terrible</b> product</p><span id="island" contenteditable="false">good</span></div>';
+    const editor = document.querySelector('#editor')!, paragraph = document.querySelector('#p')!, bold = document.querySelector('#bold')!;
+    const first = paragraph.firstChild!, last = paragraph.lastChild!;
+    const listener = vi.fn(); bold.addEventListener('click', listener);
+    const selection = document.getSelection()!;
+    selection.setBaseAndExtent(last, 4, first, 2);
+    const selected = selection.toString(), text = editor.textContent;
+    controller.configure({ ...defaults, mode: 'auto', processEditable: true }); await visible();
+    expect(highlights().map(span => span.textContent)).toEqual(['wonderful', 'terrible', 'good']);
+    expect(selection.toString()).toBe(selected);
+    const offset = (node: Node, position: number) => {
+      const range = document.createRange(); range.selectNodeContents(editor); range.setEnd(node, position); return range.toString().length;
+    };
+    expect(offset(selection.anchorNode!, selection.anchorOffset)).toBe(22);
+    expect(offset(selection.focusNode!, selection.focusOffset)).toBe(2);
+    controller.disable();
+    expect(selection.toString()).toBe(selected); expect(selection.anchorNode).toBe(last); expect(selection.focusNode).toBe(first);
+    expect(document.querySelector('#bold')).toBe(bold); expect(document.querySelector('#p')).toBe(paragraph);
+    expect(editor.textContent).toBe(text); bold.dispatchEvent(new MouseEvent('click')); expect(listener).toHaveBeenCalledOnce();
+  });
+
+  it('reanalyzes editable text in real time and retains a collapsed caret through wrap and unwrap', async () => {
+    document.body.innerHTML = '<div id="editor" contenteditable="plaintext-only">A factual sentence.</div>';
+    const editor = document.querySelector('#editor')!, selection = document.getSelection()!;
+    controller.configure({ ...defaults, mode: 'auto', processEditable: true }); await visible();
+    editor.firstChild!.textContent = 'wonderful product';
+    selection.setBaseAndExtent(editor.firstChild!, 4, editor.firstChild!, 4);
+    await visible();
+    expect(highlights().map(span => span.textContent)).toEqual(['wonderful']);
+    expect(selection.isCollapsed).toBe(true); expect(selection.anchorOffset).toBe(4);
+    const span = highlights()[0]!; span.firstChild!.textContent = 'terrible';
+    selection.setBaseAndExtent(span.firstChild!, 3, span.firstChild!, 3);
+    await visible();
+    expect(highlights().map(item => item.textContent)).toEqual(['terrible']);
+    expect(editor.textContent).toBe('terrible product'); expect(selection.anchorOffset).toBe(3);
+    controller.configure({ ...defaults, mode: 'auto', processEditable: false }); await visible();
+    expect(highlights()).toHaveLength(0); expect(selection.isCollapsed).toBe(true); expect(selection.anchorOffset).toBe(3);
+  });
+
+  it('pauses queued and mutation work inside IME composition until compositionend', async () => {
+    document.body.innerHTML = '<div id="editor" contenteditable="true"><b>wonderful</b><p>A factual sentence.</p></div><p id="outside">good</p>';
+    const editor = document.querySelector('#editor')!, paragraph = editor.querySelector('p')!, bold = editor.querySelector('b')!;
+    controller.configure({ ...defaults, mode: 'auto', processEditable: true }); await visible();
+    const wrapper = bold.firstChild!, span = bold.querySelector('[data-textheat-extension="highlight"]')!;
+    span.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+    span.firstChild!.textContent = 'terrible'; paragraph.firstChild!.textContent = 'excellent';
+    document.querySelector('#outside')!.textContent = 'awful';
+    await visible();
+    expect(bold.firstChild).toBe(wrapper); expect(bold.querySelector('[data-textheat-extension="highlight"]')).toBe(span);
+    expect(paragraph.querySelector('[data-textheat-extension]')).toBeNull();
+    expect(document.querySelector('#outside [data-textheat-extension="highlight"]')!.textContent).toBe('awful');
+    span.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true })); await visible();
+    expect(bold).toBe(editor.querySelector('b')); expect(bold.firstChild).not.toBe(wrapper);
+    expect(editor.querySelectorAll('[data-textheat-extension="highlight"]')).toHaveLength(2);
+    expect(editor.textContent).toBe('terribleexcellent');
+  });
+
+  it('defers disabling editable highlighting until the active composition ends', async () => {
+    document.body.innerHTML = '<div contenteditable="true">wonderful</div>';
+    const editor = document.querySelector('div')!;
+    controller.configure({ ...defaults, mode: 'auto', processEditable: true }); await visible();
+    const wrapper = editor.firstChild!;
+    editor.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+    controller.configure({ ...defaults, mode: 'auto', processEditable: false }); await visible();
+    expect(editor.firstChild).toBe(wrapper);
+    editor.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true })); await visible();
+    expect(editor.querySelector('[data-textheat-extension]')).toBeNull(); expect(editor.textContent).toBe('wonderful');
+  });
+
+  it('does not wrap queued editor text or animate existing highlights during composition', async () => {
+    document.body.innerHTML = '<div contenteditable="true">wonderful</div>';
+    const editor = document.querySelector('div')!;
+    controller.configure({ ...defaults, mode: 'auto', processEditable: true }); await work();
+    Observer.instances[0]!.all();
+    editor.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true })); await work();
+    expect(editor.querySelector('[data-textheat-extension]')).toBeNull();
+    editor.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true })); await work();
+    const span = highlights()[0]!;
+    Observer.instances[1]!.trigger(span);
+    expect(span.dataset.textheatAnimationState).toBe('animating');
+    editor.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true })); await work();
+    expect(span.dataset.textheatAnimationState).toBe('animating');
+    editor.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true })); await work();
+    expect(span.dataset.textheatAnimationState).toBe('visible');
+  });
+
+  it('handles inherited editable attributes, false islands and designMode only with opt-in', async () => {
+    document.body.innerHTML = '<div contenteditable="true"><div contenteditable="invalid"><p id="inherited">wonderful</p></div><div contenteditable="false"><p id="island">terrible</p><div contenteditable="true">excellent</div></div></div>';
+    controller.configure({ ...defaults, mode: 'auto' }); await visible();
+    expect(highlights().map(span => span.textContent)).toEqual(['terrible']);
+    controller.configure({ ...defaults, mode: 'auto', processEditable: true }); await visible();
+    expect(highlights().map(span => span.textContent)).toEqual(['wonderful', 'terrible', 'excellent']);
+    controller.disable(); document.body.innerHTML = '<p>wonderful</p>'; document.designMode = 'on';
+    try {
+      controller.configure({ ...defaults, mode: 'auto', processEditable: false }); await visible(); expect(highlights()).toHaveLength(0);
+      const node = document.querySelector('p')!.firstChild!, selection = document.getSelection()!;
+      selection.setBaseAndExtent(node, 2, node, 2);
+      controller.configure({ ...defaults, mode: 'auto', processEditable: true }); await visible();
+      expect(highlights()).toHaveLength(1); expect(selection.anchorOffset).toBe(2);
+      controller.disable(); expect(selection.anchorNode).toBe(node); expect(selection.anchorOffset).toBe(2);
+    } finally { document.designMode = 'off'; }
+  });
+
+  it.each(['text', 'search', 'email', 'url', 'tel', 'textarea'])('checks opt-in native %s fields manually without inline rendering or value changes', async type => {
+    document.body.innerHTML = type === 'textarea' ? '<textarea>good terrible product</textarea>' : `<input type="${type}" value="good terrible product">`;
+    const field = document.querySelector<HTMLInputElement | HTMLTextAreaElement>('input,textarea')!, value = field.value;
+    controller.configure({ ...defaults, mode: 'auto', processEditable: true }); await visible();
+    expect(highlights()).toHaveLength(0); expect(field.value).toBe(value);
+    controller.configure({ ...defaults, mode: 'manual', processEditable: true }); controller.action('PICK_TEXT');
+    field.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    expect(controller.state().picking).toBe(false);
+    expect(document.querySelector('[data-textheat-extension="ui"]')!.shadowRoot!.textContent).toContain(value);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    field.focus();
+    if (type !== 'email') field.setSelectionRange(5, 13);
+    controller.action('CHECK_SELECTION');
+    const panel = document.querySelector('[data-textheat-extension="ui"]')!.shadowRoot!;
+    if (type === 'email') expect(panel.textContent).toContain('Select non-editable');
+    else { expect(panel.querySelector('section > p:nth-of-type(2)')!.textContent).toBe('terrible'); expect(panel.textContent).not.toContain(value); }
+    expect(field.value).toBe(value); expect(field.querySelector('[data-textheat-extension]')).toBeNull();
+  });
+
+  it.each(['password', 'hidden', 'number', 'date', 'checkbox', 'text" disabled="', 'text" style="display:none'])('never checks protected or unsupported native fields (%s)', type => {
+    document.body.innerHTML = `<input type="${type}" value="private wonderful draft"><p>wonderful</p>`;
+    const field = document.querySelector('input')!, original = field.value;
+    controller.configure({ ...defaults, mode: 'manual', processEditable: true }); controller.action('PICK_TEXT');
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true }); field.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false); expect(controller.state().picking).toBe(true);
+    expect(document.querySelector('.textheat-extension-panel')).toBeNull();
+    field.focus(); if (field.type === 'password' || field.type === 'text') field.setSelectionRange(0, field.value.length);
+    controller.action('CHECK_SELECTION');
+    expect(document.querySelector('.textheat-extension-panel')!.shadowRoot!.textContent).not.toContain('private wonderful draft');
+    expect(field.value).toBe(original);
+  });
+
+  it('allows readonly native text, but rejects native selection and clicks without opt-in', () => {
+    document.body.innerHTML = '<textarea readonly>private wonderful draft</textarea>';
+    const field = document.querySelector('textarea')!;
+    controller.configure({ ...defaults, mode: 'manual' }); controller.action('PICK_TEXT');
+    field.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); expect(controller.state().picking).toBe(true);
+    field.focus(); field.setSelectionRange(8, 17); controller.action('CHECK_SELECTION');
+    expect(document.querySelector('.textheat-extension-panel')!.shadowRoot!.textContent).not.toContain('private wonderful draft');
+    controller.configure({ ...defaults, mode: 'manual', processEditable: true });
+    field.focus(); field.setSelectionRange(8, 17); controller.action('CHECK_SELECTION');
+    expect(document.querySelector('.textheat-extension-panel')!.shadowRoot!.querySelector('section > p:nth-of-type(2)')!.textContent).toBe('wonderful');
+    expect(field.value).toBe('private wonderful draft');
   });
 });

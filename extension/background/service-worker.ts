@@ -97,7 +97,7 @@ function object(value: unknown): Record<string, unknown> {
 function settingsPatch(value: unknown): Partial<ExtensionSettings> {
   const input = object(value);
   const allowed = ['mode', 'threshold', 'animate', 'showTooltips', 'theme', 'customTheme',
-    'respectReducedMotion', 'processCode', 'preloadPx', 'debug'];
+    'respectReducedMotion', 'processCode', 'processEditable', 'preloadPx', 'debug'];
   for (const key of Object.keys(input)) if (!allowed.includes(key)) throw new TypeError(`Unknown setting: ${key}`);
   if ('customTheme' in input) {
     for (const value of Object.values(object(input.customTheme))) {
@@ -143,7 +143,15 @@ async function handle(message: ExtensionMessage): Promise<ExtensionResponse> {
 chrome.runtime.onMessage.addListener((message: ExtensionMessage, sender, respond) => {
   if (!message || !['GET_SETTINGS', 'SAVE_SETTINGS', 'SAVE_SITE'].includes(message.type)) return false;
   // Content scripts may bootstrap settings, but only extension UI may mutate them.
-  if (sender.id !== chrome.runtime.id || (message.type !== 'GET_SETTINGS' && sender.tab)) {
+  // An options page opened as a full tab also has sender.tab. Authenticate its
+  // browser-provided document URL rather than treating all tab senders as websites.
+  let ownUI = false;
+  try {
+    const url = new URL(sender.url ?? '');
+    ownUI = url.protocol === 'chrome-extension:' && url.hostname === chrome.runtime.id
+      && ['/options/options.html', '/popup/popup.html'].includes(url.pathname);
+  } catch { /* Missing/malformed URL cannot authorize a tab-based writer. */ }
+  if (sender.id !== chrome.runtime.id || (message.type !== 'GET_SETTINGS' && sender.tab && !ownUI)) {
     respond({ ok: false, error: 'Not authorized' });
     return false;
   }

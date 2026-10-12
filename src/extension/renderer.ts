@@ -2,6 +2,36 @@ import { analyze, getTheme } from 'textheat';
 import { getPageTheme } from 'textheat/browser';
 import type { Category, Theme, ThemeInput } from 'textheat';
 import type { ExtensionSettings } from '../../extension/shared/settings';
+import { editingRoot } from './exclusions';
+
+/** Preserve direction and collapsed carets without rewriting the editor's markup. */
+function preserveSelection(element: Element): (() => void) | undefined {
+  const root = editingRoot(element);
+  const selection = element.ownerDocument.getSelection();
+  if (!root || !selection?.anchorNode || !selection.focusNode || !root.contains(selection.anchorNode) || !root.contains(selection.focusNode)) return;
+  const offset = (node: Node, position: number) => {
+    const range = element.ownerDocument.createRange();
+    range.selectNodeContents(root); range.setEnd(node, position);
+    return range.toString().length;
+  };
+  const anchor = offset(selection.anchorNode, selection.anchorOffset);
+  const focus = offset(selection.focusNode, selection.focusOffset);
+  return () => {
+    if (!root.isConnected) return;
+    const endpoint = (position: number): [Node, number] => {
+      const walker = element.ownerDocument.createTreeWalker(root, 4);
+      let node: Node | null;
+      while ((node = walker.nextNode())) {
+        const length = (node as Text).length;
+        if (position <= length) return [node, position];
+        position -= length;
+      }
+      return [root, root.childNodes.length];
+    };
+    const [anchorNode, anchorOffset] = endpoint(anchor), [focusNode, focusOffset] = endpoint(focus);
+    selection.setBaseAndExtent(anchorNode, anchorOffset, focusNode, focusOffset);
+  };
+}
 
 export const marker = '[data-textheat-extension="wrapper"]';
 export function extensionTheme(settings: ExtensionSettings, element?: Element): ThemeInput {
@@ -49,14 +79,16 @@ export function replaceText(node: Text, settings: ExtensionSettings, palette?: T
     wrapper.append(span); highlights.push(span); offset = p.end;
   }
   wrapper.append(doc.createTextNode(input.slice(offset)));
-  node.replaceWith(wrapper);
+  const restoreSelection = node.parentElement && preserveSelection(node.parentElement);
+  node.replaceWith(wrapper); restoreSelection?.();
   return { wrapper, highlights };
 }
 /** Restore the exact original node unless the page edited the generated subtree. */
 export function restoreWrapper(wrapper: Element, replacement?: Replacement): void {
+  const restoreSelection = preserveSelection(wrapper);
   if (replacement && wrapper.textContent === replacement.value && [...wrapper.children].every(child => child.getAttribute('data-textheat-extension') === 'highlight')) {
-    wrapper.replaceWith(replacement.original); return;
+    wrapper.replaceWith(replacement.original); restoreSelection?.(); return;
   }
   for (const span of wrapper.querySelectorAll('[data-textheat-extension="highlight"]')) span.replaceWith(...span.childNodes);
-  wrapper.replaceWith(...wrapper.childNodes);
+  wrapper.replaceWith(...wrapper.childNodes); restoreSelection?.();
 }

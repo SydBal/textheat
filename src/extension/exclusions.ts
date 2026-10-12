@@ -1,9 +1,26 @@
 import type { ExtensionSettings } from '../../extension/shared/settings';
 const excluded = 'script,style,noscript,template,textarea,input,select,option,button,svg,math,canvas,iframe,[data-textheat-extension], [hidden], [inert], [aria-hidden="true"]';
-export function eligibleElement(element: Element, settings: ExtensionSettings): boolean {
-  if (element.ownerDocument.designMode?.toLowerCase() === 'on' || !element.isConnected || element.closest(excluded) || !settings.processCode && element.closest('code,pre')) return false;
-  const editable = element.closest('[contenteditable]');
-  if (editable && editable.getAttribute('contenteditable')?.toLowerCase() !== 'false') return false;
+/** Resolve actual inherited editing state, including invalid/inherited attributes. */
+export function editingRoot(element: Element): Element | undefined {
+  let root: Element | undefined;
+  for (let current: Element | null = element; current; current = current.parentElement) {
+    const value = current.getAttribute('contenteditable')?.toLowerCase();
+    if (value === 'false') return root;
+    if (value === '' || value === 'true' || value === 'plaintext-only') root = current;
+  }
+  return element.ownerDocument.designMode?.toLowerCase() === 'on' ? element.ownerDocument.body : root;
+}
+/** Native fields are read-only analysis sources, never inline rendering targets. */
+export function eligibleField(element: Element, settings: ExtensionSettings): element is HTMLInputElement | HTMLTextAreaElement {
+  if (!settings.processEditable || !element.matches('input,textarea')) return false;
+  const field = element as HTMLInputElement | HTMLTextAreaElement;
+  if (field.matches(':disabled') || element.localName === 'input' && !['text', 'search', 'email', 'url', 'tel'].includes((field as HTMLInputElement).type)) return false;
+  return eligibleElement(element, settings, true);
+}
+export function eligibleElement(element: Element, settings: ExtensionSettings, nativeField = false): boolean {
+  const blocked = nativeField ? excluded.replace('textarea,input,', '') : excluded;
+  if (!element.isConnected || element.closest(blocked) || !settings.processCode && element.closest('code,pre')) return false;
+  if (!settings.processEditable && (element.ownerDocument.designMode?.toLowerCase() === 'on' || editingRoot(element))) return false;
   const win = element.ownerDocument.defaultView;
   for (let current: Element | null = element; current; current = current.parentElement) {
     const style = win?.getComputedStyle(current);

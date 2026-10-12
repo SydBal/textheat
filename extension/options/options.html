@@ -42,8 +42,9 @@
           </section>
           <section class="card" aria-labelledby="advanced-title">
             <h2 id="advanced-title">Fine-tune the experience</h2>
-            <label class="check"><input id="processCode" type="checkbox"><span>Include code blocks<small>Off by default. Editable fields are always excluded.</small></span></label>
-            <div class="field"><label for="preloadPx">Preload distance <small>Pixels ahead of the viewport · 0–1000</small></label><input id="preloadPx" type="number" min="0" max="1000" step="1" value="300" required></div>
+            <label class="check"><input id="processCode" type="checkbox"><span>Include code blocks<small>Off by default. Highlight readable code and preformatted text.</small></span></label>
+            <label class="check"><input id="processEditable" type="checkbox"><span>Include editable text<small>Off by default. Highlights rich-text editors; native input/textarea values support Manual checks only. Passwords are always excluded. Some site editors may conflict; turn off if editing is affected.</small></span></label>
+            <div class="field"><label for="preloadPx">Preload distance <small>Pixels ahead of the viewport · 0–1000 · default 0</small></label><input id="preloadPx" type="number" min="0" max="1000" step="1" value="0" required></div>
             <label class="check"><input id="debug" type="checkbox"><span>Local debug logging<small>For troubleshooting in developer tools. Nothing is uploaded.</small></span></label>
           </section>
           <div class="save-bar"><p>Changes apply to accessible open pages.</p><button class="primary" type="submit">Save preferences</button></div>

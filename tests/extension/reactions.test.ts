@@ -99,9 +99,9 @@ describe('isolated emoji reactions', () => {
     const scan = vi.spyOn(document, 'querySelectorAll');
     manager.trackFor(50); manager.trackFor(50); expect(frames.size).toBe(1);
     source.getBoundingClientRect = () => rect(100, 200); runFrame(16);
-    expect(layers()[0]!.style.left).toBe('264px'); expect(layers()[0]!.style.top).toBe('92px');
+    expect(layers()[0]!.style.left).toBe('260px'); expect(layers()[0]!.style.top).toBe('92px');
     source.getBoundingClientRect = () => rect(120, 240); runFrame(32);
-    expect(layers()[0]!.style.left).toBe('304px'); expect(layers()[0]!.style.top).toBe('112px');
+    expect(layers()[0]!.style.left).toBe('300px'); expect(layers()[0]!.style.top).toBe('112px');
     runFrame(64); expect(frames.size).toBe(0); expect(scan).not.toHaveBeenCalled();
     scan.mockRestore(); expect(layers()).toHaveLength(1);
     manager.reveal(unknown); expect(particles()).toHaveLength(4);
@@ -373,7 +373,7 @@ describe('isolated emoji reactions', () => {
     document.querySelector('article')!.dispatchEvent(new Event('scroll'));
     window.dispatchEvent(new Event('resize')); window.dispatchEvent(new Event('resize'));
     expect(vi.getTimerCount()).toBe(1); await vi.advanceTimersByTimeAsync(16);
-    expect(layers()[0]!.style.left).toBe('264px'); expect(layers()[0]!.style.top).toBe('92px');
+    expect(layers()[0]!.style.left).toBe('260px'); expect(layers()[0]!.style.top).toBe('92px');
     expect(badges()[0]!.style.getPropertyValue('--reaction-bg')).toBe('#123456');
     expect(source.style.position).toBe(''); expect(vi.getTimerCount()).toBe(0);
   });

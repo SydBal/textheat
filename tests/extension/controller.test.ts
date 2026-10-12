@@ -521,6 +521,17 @@ describe('progressive extension controller', () => {
     expect(document.querySelectorAll('[data-textheat-extension]')).toHaveLength(0);
     expect(vi.getTimerCount()).toBe(0);
   });
+  it('switches existing highlight corners between sharp default and rounded preference', async () => {
+    controller.configure({ ...defaults, mode: 'auto' }); await visible();
+    const span = highlights().find(p => p.textContent === 'love')!;
+    expect(defaults.roundedCorners).toBe(false);
+    expect(span.style.getPropertyValue('--textheat-radius')).toBe('0px');
+    controller.configure({ ...defaults, mode: 'auto', roundedCorners: true });
+    expect(span.style.getPropertyValue('--textheat-radius')).toBe('3px');
+    controller.configure({ ...defaults, mode: 'auto', roundedCorners: false });
+    expect(span.style.getPropertyValue('--textheat-radius')).toBe('0px');
+    expect(vi.getTimerCount()).toBe(0);
+  });
   it('adapts to different local surfaces and recolors on ancestor theme changes without changing text', async () => {
     document.body.innerHTML = '<article style="background:#ffffff"><p id="light">good</p><p id="dark" style="background:#111111">good</p></article>';
     const original = document.body.textContent;

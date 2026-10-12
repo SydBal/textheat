@@ -98,7 +98,7 @@ function object(value: unknown): Record<string, unknown> {
 
 function settingsPatch(value: unknown): Partial<ExtensionSettings> {
   const input = object(value);
-  const allowed = ['mode', 'threshold', 'animate', 'showTooltips', 'emojiReactions', 'theme', 'customTheme',
+  const allowed = ['mode', 'threshold', 'animate', 'showTooltips', 'emojiReactions', 'roundedCorners', 'theme', 'customTheme',
     'respectReducedMotion', 'processCode', 'processEditable', 'preloadPx', 'debug'];
   for (const key of Object.keys(input)) if (!allowed.includes(key)) throw new TypeError(`Unknown setting: ${key}`);
   if ('customTheme' in input) {

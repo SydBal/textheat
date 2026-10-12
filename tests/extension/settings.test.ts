@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 describe('extension settings and permission contract', () => {
   it('defaults Off, isolates settings, and applies per-site disabling', () => {
     expect(defaults.emojiReactions).toBe(false);
+    expect(defaults.roundedCorners).toBe(false);
     expect(validateSettings({ mode: 'auto' }).emojiReactions).toBe(false);
     expect(validateSettings({ emojiReactions: true }).emojiReactions).toBe(true);
     const settings = validateSettings({ mode: 'auto' }); settings.customTheme.positive = { background: '#000000', color: '#FFFFFF' };

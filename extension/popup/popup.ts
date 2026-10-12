@@ -37,6 +37,7 @@ function lock(value: boolean): void {
 
 function render(): void {
   const settings = effectiveSettings(stored, hostname);
+  document.documentElement.dataset.edges = settings.roundedCorners ? 'rounded' : 'sharp';
   for (const radio of modes) radio.checked = radio.value === stored.settings.mode;
   element('manual-panel').hidden = stored.settings.mode !== 'manual';
   element('mode-description').textContent = {
@@ -49,7 +50,7 @@ function render(): void {
   element<HTMLOutputElement>('threshold-value').value = settings.threshold.toFixed(2);
   element('site-threshold-note').hidden = stored.sites[hostname]?.threshold === undefined;
   element<HTMLSelectElement>('theme').value = settings.theme;
-  for (const key of ['animate', 'showTooltips', 'emojiReactions', 'processCode', 'processEditable'] as const) element<HTMLInputElement>(key).checked = settings[key];
+  for (const key of ['animate', 'showTooltips', 'emojiReactions', 'roundedCorners', 'processCode', 'processEditable'] as const) element<HTMLInputElement>(key).checked = settings[key];
   lock(busy);
 }
 
@@ -153,7 +154,7 @@ element<HTMLSelectElement>('theme').addEventListener('change', () => {
   const theme = element<HTMLSelectElement>('theme').value as ExtensionSettings['theme'];
   void work(() => save({ type: 'SAVE_SETTINGS', settings: { theme } }));
 });
-for (const key of ['animate', 'showTooltips', 'emojiReactions', 'processCode', 'processEditable'] as const) element<HTMLInputElement>(key).addEventListener('change', () => {
+for (const key of ['animate', 'showTooltips', 'emojiReactions', 'roundedCorners', 'processCode', 'processEditable'] as const) element<HTMLInputElement>(key).addEventListener('change', () => {
   const checked = element<HTMLInputElement>(key).checked;
   void work(() => save({ type: 'SAVE_SETTINGS', settings: { [key]: checked } }));
 });

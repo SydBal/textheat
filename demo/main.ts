@@ -54,7 +54,27 @@ for (const [key, label] of Object.entries(extraExamples)) {
   button.textContent = `${label} ↗`;
   document.querySelector('.example-buttons')!.append(button);
 }
-let dark = false;
+const systemTheme = window.matchMedia?.('(prefers-color-scheme: dark)');
+let dark = !!systemTheme?.matches;
+type ThemeChoice = 'system' | 'dark' | 'light';
+const themeStorageKey = 'textheat-color-theme';
+const validThemeChoice = (value: string | null): value is ThemeChoice => value === 'system' || value === 'dark' || value === 'light';
+let themeChoice: ThemeChoice = 'system';
+try {
+  const savedTheme = window.localStorage.getItem(themeStorageKey);
+  if (validThemeChoice(savedTheme)) themeChoice = savedTheme;
+} catch { /* Storage can be disabled in private/opaque contexts; default to the OS. */ }
+const applyTheme = () => {
+  dark = themeChoice === 'dark' || themeChoice === 'system' && (systemTheme?.matches ?? true);
+  document.body.classList.toggle('dark', dark);
+  hero.refresh();
+  themeButton.textContent = themeChoice === 'system' ? '◐' : dark ? '☾' : '☀';
+  const current = themeChoice === 'system' ? `system preference (${dark ? 'dark' : 'light'})` : themeChoice;
+  const next = themeChoice === 'system' ? 'dark' : themeChoice === 'dark' ? 'light' : 'system preference';
+  themeButton.setAttribute('aria-label', `Color theme: ${current}. Activate for ${next}.`);
+  themeButton.title = `Color theme: ${current} · Next: ${next}`;
+  refresh();
+};
 const autoNative = document.querySelector<HTMLInputElement>('#native-auto')!;
 const nativeButton = document.querySelector<HTMLButtonElement>('#native-analyze')!;
 const nativeStatus = document.querySelector<HTMLParagraphElement>('#native-status')!;
@@ -63,6 +83,9 @@ let availability: NativeAvailability = 'unsupported';
 let pending: AbortController | undefined;
 let debounce: ReturnType<typeof setTimeout> | undefined;
 let revision = 0;
+let exampleTimer: number | undefined;
+let exampleRevision = 0;
+let typingExample = false;
 const currentOptions = (): Options => ({ threshold: Number(threshold.value), showTooltips: tooltips.checked });
 for (const [field, value] of Object.entries(lexiconStats)) {
   for (const element of document.querySelectorAll<HTMLElement>(`[data-lexicon-stat="${field}"]`)) element.textContent = value.toLocaleString('en-US');
@@ -181,15 +204,58 @@ void text.nativeAvailability().then(state => {
   nativeButton.textContent = state === 'downloadable' || state === 'downloading' ? 'Download browser model & analyze' : 'Analyze with native model';
   resetNativeStatus();
 });
-input.addEventListener('input', refresh); threshold.addEventListener('input', refresh); tooltips.addEventListener('change', refresh);
-document.querySelector('#clear')!.addEventListener('click', () => { input.value = ''; refresh(); input.focus(); });
+input.addEventListener('input', () => { if (!typingExample) cancelExampleTyping(); refresh(); }); threshold.addEventListener('input', refresh); tooltips.addEventListener('change', refresh);
+function cancelExampleTyping() {
+  exampleRevision++;
+  if (exampleTimer !== undefined) window.clearTimeout(exampleTimer);
+  exampleTimer = undefined;
+  document.querySelector('.live-editor')?.setAttribute('aria-busy', 'false');
+}
+document.querySelector('#clear')!.addEventListener('click', () => { cancelExampleTyping(); input.value = ''; refresh(); input.focus(); });
 for (const button of document.querySelectorAll<HTMLButtonElement>('[data-example]')) button.addEventListener('click', () => {
-  input.value = examples[button.dataset.example!]!; refresh();
+  cancelExampleTyping();
+  const currentRevision = exampleRevision;
+  const chars = Array.from(examples[button.dataset.example!]!);
+  input.value = ''; input.focus({ preventScroll: true });
+  document.querySelector('.live-editor')?.setAttribute('aria-busy', 'true');
+  const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+  document.querySelector('.workspace')!.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'center' });
+  refresh();
   document.querySelectorAll('[data-example]').forEach(el => el.setAttribute('aria-pressed', String(el === button)));
+  if (reducedMotion) {
+    input.value = chars.join('');
+    typingExample = true; input.dispatchEvent(new Event('input', { bubbles: true })); typingExample = false;
+    document.querySelector('.live-editor')?.setAttribute('aria-busy', 'false');
+    return;
+  }
+  let position = 0;
+  const typeNext = () => {
+    if (currentRevision !== exampleRevision) { exampleTimer = undefined; return; }
+    if (position >= chars.length) {
+      exampleTimer = undefined;
+      document.querySelector('.live-editor')?.setAttribute('aria-busy', 'false');
+      return;
+    }
+    input.value += chars[position++]!;
+    typingExample = true;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    typingExample = false;
+    if (position < chars.length) exampleTimer = window.setTimeout(typeNext, 18);
+    else {
+      exampleTimer = undefined;
+      document.querySelector('.live-editor')?.setAttribute('aria-busy', 'false');
+    }
+  };
+  typeNext();
 });
 themeButton.addEventListener('click', () => {
-  dark = !dark; document.body.classList.toggle('dark', dark);
-  hero.refresh();
-  themeButton.textContent = dark ? '☀' : '☾'; themeButton.setAttribute('aria-label', `Switch to ${dark ? 'light' : 'dark'} theme`); refresh();
+  themeChoice = themeChoice === 'system' ? 'dark' : themeChoice === 'dark' ? 'light' : 'system';
+  try { window.localStorage.setItem(themeStorageKey, themeChoice); } catch { /* Persisting is optional when storage is disabled. */ }
+  applyTheme();
 });
-refresh();
+const followSystemTheme = () => {
+  if (themeChoice === 'system') applyTheme();
+};
+systemTheme?.addEventListener?.('change', followSystemTheme);
+window.addEventListener('pagehide', () => systemTheme?.removeEventListener?.('change', followSystemTheme), { once: true });
+applyTheme();

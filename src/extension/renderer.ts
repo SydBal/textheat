@@ -50,7 +50,7 @@ export function updateTooltips(wrapper: Element, enabled: boolean): void {
     else span.removeAttribute('title');
   }
 }
-export function recolorHighlights(wrapper: Element, theme: Theme): void {
+export function recolorHighlights(wrapper: Element, theme: Theme, roundedCorners = false): void {
   for (const span of wrapper.querySelectorAll<HTMLElement>('[data-textheat-extension="highlight"]')) {
     const category = (span.dataset.emotion ?? span.dataset.sentiment) as Category;
     const color = theme[category];
@@ -58,6 +58,7 @@ export function recolorHighlights(wrapper: Element, theme: Theme): void {
     // Avoid observer feedback when colors did not change.
     if (span.style.getPropertyValue('--textheat-bg') !== color.background) span.style.setProperty('--textheat-bg', color.background);
     if (span.style.getPropertyValue('--textheat-fg') !== color.color) span.style.setProperty('--textheat-fg', color.color);
+    span.style.setProperty('--textheat-radius', roundedCorners ? '3px' : '0px');
   }
 }
 export function replaceText(node: Text, settings: ExtensionSettings, palette?: Theme): { wrapper?: HTMLSpanElement; highlights: HTMLSpanElement[] } {
@@ -83,6 +84,7 @@ export function replaceText(node: Text, settings: ExtensionSettings, palette?: T
     const color = theme[p.emotion ?? p.sentiment];
     span.style.setProperty('--textheat-bg', color.background);
     span.style.setProperty('--textheat-fg', color.color);
+    span.style.setProperty('--textheat-radius', settings.roundedCorners ? '3px' : '0px');
     const explanation = `${p.sentiment}${p.emotion ? ` / ${p.emotion}` : ''}; importance ${p.importance.toFixed(2)}; uncalibrated heuristic ${p.heuristicConfidence.toFixed(2)}. ${p.explanation}`;
     explanations.set(span, explanation);
     if (settings.showTooltips) span.title = explanation;

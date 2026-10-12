@@ -5,6 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const markup = readFileSync(resolve(process.cwd(), 'demo/index.html'), 'utf8');
 const element = <T extends Element>(selector: string) => document.querySelector<T>(selector)!;
+let systemDark = false;
+let reducedMotion = false;
+let onSystemThemeChange: (() => void) | undefined;
+const oldScrollIntoView = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView');
 function type(input: string) {
   element<HTMLTextAreaElement>('#input').value = input;
   element('#input').dispatchEvent(new Event('input', { bubbles: true }));
@@ -12,8 +16,18 @@ function type(input: string) {
 
 beforeEach(async () => {
   vi.resetModules();
+  systemDark = false; reducedMotion = false; onSystemThemeChange = undefined;
+  try { window.localStorage.removeItem('textheat-color-theme'); } catch { /* Opaque origin. */ }
+  Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true, value: vi.fn() });
+  vi.useFakeTimers();
+  vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(() => {});
   document.documentElement.innerHTML = markup.replace(/<!doctype html>/i, '');
   vi.stubGlobal('LanguageModel', undefined);
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    get matches() { return query.includes('reduced-motion') ? reducedMotion : query === '(prefers-color-scheme: dark)' && systemDark; },
+    addEventListener: (name: string, listener: () => void) => { if (name === 'change' && query === '(prefers-color-scheme: dark)') onSystemThemeChange = listener; },
+    removeEventListener: vi.fn()
+  }));
   await import('../demo/main');
 });
 afterEach(async () => {
@@ -21,30 +35,79 @@ afterEach(async () => {
   const { destroy } = await import('../src/browser/mount');
   destroy(element('#output'));
   document.body.replaceChildren();
+  if (oldScrollIntoView) Object.defineProperty(Element.prototype, 'scrollIntoView', oldScrollIntoView);
+  else Reflect.deleteProperty(Element.prototype, 'scrollIntoView');
   vi.unstubAllGlobals();
 });
 
 describe('live browser demo attribution', () => {
+  it('follows OS light/dark and refreshes the current hero word until the visitor manually selects a theme', async () => {
+    const { getPageTheme } = await import('../src/browser/index');
+    expect(document.body.classList.contains('dark')).toBe(false);
+    const heroWord = element<HTMLElement>('#hero-emotion');
+    const category = heroWord.dataset.category as keyof ReturnType<typeof getPageTheme>;
+    const expectedLight = document.createElement('span'); expectedLight.style.backgroundColor = getPageTheme(element('#hero-title'))[category].background;
+    expect(heroWord.style.backgroundColor).toBe(expectedLight.style.backgroundColor);
+    systemDark = true; onSystemThemeChange?.();
+    expect(document.body.classList.contains('dark')).toBe(true);
+    const expectedDark = document.createElement('span'); expectedDark.style.backgroundColor = getPageTheme(element('#hero-title'))[category].background;
+    expect(heroWord.style.backgroundColor).toBe(expectedDark.style.backgroundColor);
+    expect(expectedDark.style.backgroundColor).not.toBe(expectedLight.style.backgroundColor);
+    element<HTMLButtonElement>('#theme-toggle').click();
+    expect(document.body.classList.contains('dark')).toBe(true);
+    systemDark = false; onSystemThemeChange?.();
+    expect(document.body.classList.contains('dark')).toBe(true);
+    element<HTMLButtonElement>('#theme-toggle').click();
+    expect(document.body.classList.contains('dark')).toBe(false);
+    systemDark = true; onSystemThemeChange?.();
+    expect(document.body.classList.contains('dark')).toBe(false);
+  });
+  it('cycles system → dark → light → system and persists each explicit choice', () => {
+    const button = element<HTMLButtonElement>('#theme-toggle');
+    expect(button.title).toContain('system preference');
+    button.click(); expect(document.body.classList.contains('dark')).toBe(true);
+    expect(window.localStorage.getItem('textheat-color-theme')).toBe('dark');
+    button.click(); expect(document.body.classList.contains('dark')).toBe(false);
+    expect(window.localStorage.getItem('textheat-color-theme')).toBe('light');
+    button.click(); expect(window.localStorage.getItem('textheat-color-theme')).toBe('system');
+    systemDark = true; onSystemThemeChange?.(); expect(document.body.classList.contains('dark')).toBe(true);
+  });
+  it('restores a saved explicit scheme and defaults to dark when matchMedia is unavailable', async () => {
+    window.dispatchEvent(new Event('pagehide'));
+    vi.resetModules(); document.documentElement.innerHTML = markup.replace(/<!doctype html>/i, '');
+    window.localStorage.setItem('textheat-color-theme', 'light');
+    vi.stubGlobal('matchMedia', (query: string) => ({ matches: query.includes('color-scheme') && systemDark, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+    await import('../demo/main');
+    expect(document.body.classList.contains('dark')).toBe(false);
+    window.dispatchEvent(new Event('pagehide')); vi.resetModules(); document.documentElement.innerHTML = markup.replace(/<!doctype html>/i, '');
+    window.localStorage.removeItem('textheat-color-theme');
+    vi.stubGlobal('matchMedia', undefined);
+    await import('../demo/main');
+    expect(document.body.classList.contains('dark')).toBe(true);
+  });
   it('demonstrates all seven palette categories in the initial editable example', () => {
     const categories = new Set([...document.querySelectorAll<HTMLElement>('#output .textheat-highlight')].map(span => span.dataset.emotion ?? span.dataset.sentiment));
     expect([...categories].sort()).toEqual(['positive', 'negative', 'joy', 'anger', 'sadness', 'fear', 'surprise'].sort());
     expect(element('#output').textContent).toBe(element<HTMLTextAreaElement>('#input').value);
   });
-  it('loads every example and updates the playground without stale attribution', () => {
+  it('loads every example without stale attribution', () => {
+    reducedMotion = true;
     const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-example]'));
     expect(buttons).toHaveLength(26);
     const sentences = new Set<string>();
     for (const button of buttons) {
       button.click();
-      const input = element<HTMLTextAreaElement>('#input').value;
-      expect(input.length).toBeGreaterThan(0);
-      expect(element('#output').textContent).toBe(input);
-      expect(element('#char-count').textContent).toBe(`${input.length} characters`);
+      const completeInput = element<HTMLTextAreaElement>('#input').value;
+      expect(completeInput.length).toBeGreaterThan(0);
+      expect(element('.live-editor').getAttribute('aria-busy')).toBe('false');
+      expect(Element.prototype.scrollIntoView).toHaveBeenCalled();
+      expect(element('#output').textContent).toBe(completeInput);
+      expect(element('#char-count').textContent).toBe(`${completeInput.length} characters`);
       expect(button.getAttribute('aria-pressed')).toBe('true');
       expect(document.querySelectorAll('[data-example][aria-pressed="true"]')).toHaveLength(1);
       expect(element('#attribution-status').textContent!.length).toBeGreaterThan(0);
       expect(document.querySelector('#output img, #output b')).toBeNull();
-      sentences.add(input);
+      sentences.add(completeInput);
     }
     expect(sentences.size).toBe(buttons.length);
   });
@@ -90,6 +153,26 @@ describe('live browser demo attribution', () => {
     expect(element('#output').textContent).toBe('');
     expect(element('#aspects').textContent).not.toContain('dashboard');
     expect(element('#evidence').textContent).not.toContain('excellent');
+  });
+  it('types preset words incrementally, scrolls to the demo, and cancels when the user edits', async () => {
+    const button = element<HTMLButtonElement>('[data-example="positive"]');
+    button.click();
+    expect(element<HTMLTextAreaElement>('#input').value.length).toBe(1);
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(36);
+    expect(element<HTMLTextAreaElement>('#input').value.length).toBeGreaterThan(1);
+    expect(element('.live-editor').getAttribute('aria-busy')).toBe('true');
+    type('Own text');
+    expect(element('.live-editor').getAttribute('aria-busy')).toBe('false');
+    const entered = element<HTMLTextAreaElement>('#input').value;
+    await vi.advanceTimersByTimeAsync(500);
+    expect(element<HTMLTextAreaElement>('#input').value).toBe(entered);
+  });
+  it('types immediately when reduced-motion is requested', () => {
+    reducedMotion = true;
+    element<HTMLButtonElement>('[data-example="positive"]').click();
+    expect(element<HTMLTextAreaElement>('#input').value).toContain('beautiful');
+    expect(element('.live-editor').getAttribute('aria-busy')).toBe('false');
   });
   it('uses cohesive adaptive colors for positive/negative badges and updates them in dark mode', async () => {
     const { getPageTheme } = await import('../src/browser/index');

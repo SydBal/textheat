@@ -25,7 +25,8 @@ describe('public website', () => {
     for (const id of ['theme-toggle', 'input', 'char-count', 'clear', 'output', 'sentiment-label', 'result-summary', 'threshold', 'threshold-value', 'tooltips', 'aspects', 'clauses', 'evidence', 'attribution-status', 'ambiguity', 'native-status', 'native-auto', 'native-analyze', 'native-assessment']) {
       expect(document.querySelectorAll(`[id="${id}"]`)).toHaveLength(1);
     }
-    expect(document.querySelector('.hero')?.nextElementSibling?.classList.contains('workspace')).toBe(true);
+    expect(document.querySelector('.hero')?.nextElementSibling?.classList.contains('page')).toBe(true);
+    expect(document.querySelector('.hero')?.nextElementSibling?.firstElementChild?.classList.contains('workspace')).toBe(true);
     expect(document.querySelector('.hero .eyebrow')).toBeNull();
     expect(document.querySelector('.brand .version')).toBeNull();
     expect(document.querySelector('#workspace-heading h2')).toBeNull();
@@ -39,13 +40,14 @@ describe('public website', () => {
     expect(document.querySelector('.workspace')?.nextElementSibling?.classList.contains('legend')).toBe(true);
     expect(document.querySelector('.legend')?.nextElementSibling?.classList.contains('examples')).toBe(true);
     expect(document.querySelector('.examples')?.nextElementSibling?.classList.contains('analysis-insights')).toBe(true);
-    expect(document.querySelector('main')?.lastElementChild?.id).toBe('extension-download');
+    expect(document.querySelector('main')?.lastElementChild?.lastElementChild?.id).toBe('extension-download');
     expect(document.querySelector('#privacy')?.nextElementSibling?.id).toBe('extension-download');
     expect(document.querySelector('main')?.nextElementSibling?.tagName).toBe('FOOTER');
     const actions = document.querySelectorAll('.hero-actions a');
     const emoji = document.querySelector<HTMLInputElement>('.hero #hero-emoji')!;
     expect(emoji.type).toBe('checkbox'); expect(emoji.checked).toBe(false);
-    expect(document.querySelector('.hero > p')!.compareDocumentPosition(emoji) & 4).toBeTruthy();
+    expect(document.querySelector('#theme-toggle')?.getAttribute('aria-label')).toContain('system preference');
+    expect(document.querySelector('.hero-inner > p')!.compareDocumentPosition(emoji) & 4).toBeTruthy();
     expect(emoji.compareDocumentPosition(document.querySelector('.hero-actions')!) & 4).toBeTruthy();
     expect(actions).toHaveLength(2);
     expect(actions[0]?.getAttribute('href')).toBe('./downloads/textheat-chrome.zip');
@@ -58,6 +60,22 @@ describe('public website', () => {
     expect(link?.getAttribute('download')).toBe('textheat-chrome.zip');
     const banner = document.querySelector('#extension-download')!.textContent!;
     for (const wording of ['unzip', 'chrome://extensions', 'Developer mode', 'Load unpacked', 'Off', 'Not published in the Chrome Web Store']) expect(banner).toContain(wording);
+  });
+
+  it('uses full-bleed header, hero and footer bands and credits the creator', () => {
+    const css = readFileSync(resolve(root, 'demo/style.css'), 'utf8');
+    expect(css).toContain('.topbar-inner {');
+    expect(css).toContain('.hero-inner {');
+    expect(css).toContain('.footer-inner {');
+    expect(css).not.toContain('width: 100vw;');
+    expect(document.querySelector('.topbar > .page')).not.toBeNull();
+    expect(document.querySelector('.hero > .page')).not.toBeNull();
+    expect(document.querySelector('footer > .page')).not.toBeNull();
+    const credit = document.querySelector('.footer-credit a')!;
+    expect(credit.getAttribute('href')).toBe('https://dominic.balass.one/');
+    expect(credit.getAttribute('target')).toBe('_blank');
+    expect(credit.getAttribute('rel')).toContain('noopener');
+    expect(document.querySelector('.footer-tagline')).toBeNull();
   });
 
   it('explains privacy, algorithm constants, uncertainty and the website-only optional model', () => {
@@ -92,6 +110,31 @@ describe('public website', () => {
     expect(readFileSync(resolve(root, 'demo/public/social/textheat-social.svg'), 'utf8')).toContain('viewBox="0 0 1200 630"');
     expect(readFileSync(resolve(root, 'demo/public/favicon.svg'), 'utf8')).toContain('<svg');
     expect(document.querySelector('link[rel="icon"]')?.getAttribute('href')).toBe('./favicon.svg');
+  });
+
+  it('shares warm orange personal-site tokens, square geometry and unchanged sentiment colors across the app', () => {
+    const siteCss = readFileSync(resolve(root, 'demo/style.css'), 'utf8');
+    for (const token of ['--bg: #faf9f6', '--ink: #1c1917', '--muted: #57534e', '--line: #e7e2d8', '--accent: #ad482e', '--accent: #e8896b', '6px 6px 0 var(--soft)', 'border-radius: 0']) expect(siteCss).toContain(token);
+    expect(siteCss).not.toContain('#7c3aed'); expect(siteCss).not.toContain('#a78bfa');
+    expect(siteCss).toContain('.legend-item.positive { background: #D1FAE5; color: #065F46; }');
+    const popup = readFileSync(resolve(root, 'extension/popup/popup.css'), 'utf8');
+    const options = readFileSync(resolve(root, 'extension/options/options.css'), 'utf8');
+    for (const css of [popup, options]) { expect(css).toContain('--accent: #ad482e'); expect(css).toContain('--accent: #e8896b'); expect(css).toContain('prefers-color-scheme: dark'); }
+  });
+
+  it('uses the personal-site warm orange design tokens without recoloring sentiment categories', () => {
+    const css = readFileSync(resolve(root, 'demo/style.css'), 'utf8');
+    for (const token of ['--bg: #faf9f6', '--ink: #1c1917', '--muted: #57534e', '--line: #e7e2d8', '--accent: #ad482e', '--accent: #e8896b', 'box-shadow: 6px 6px 0 var(--soft)', 'border-radius: 0']) expect(css).toContain(token);
+    expect(css).not.toContain('#7c3aed'); expect(css).not.toContain('#a78bfa');
+    expect(css).toContain('.page :where(*) { border-radius: 0 !important; }');
+    expect(css).toContain('.legend-item.positive { background: #D1FAE5; color: #065F46; }');
+    const popupCss = readFileSync(resolve(root, 'extension/popup/popup.css'), 'utf8');
+    const optionsCss = readFileSync(resolve(root, 'extension/options/options.css'), 'utf8');
+    for (const extensionCss of [popupCss, optionsCss]) {
+      expect(extensionCss).toContain('--accent: #ad482e');
+      expect(extensionCss).toContain('--accent: #e8896b');
+      expect(extensionCss).toContain('@media (prefers-color-scheme: dark)');
+    }
   });
 
   it('builds the extension before preparing the download and running Vite', () => {

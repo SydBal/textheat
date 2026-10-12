@@ -41,8 +41,13 @@ export function getPageTheme(element: Element): Theme {
     const root = current.getRootNode();
     current = current.parentElement ?? (root.nodeType === 11 && 'host' in root ? (root as ShadowRoot).host : null);
   }
-  const scheme = styles[0]?.colorScheme || win.getComputedStyle(element.ownerDocument.documentElement).colorScheme;
-  const darkCanvas = scheme === 'dark' || scheme?.includes('dark') && !!win.matchMedia?.('(prefers-color-scheme: dark)').matches;
+  // Computed color-scheme commonly reports `normal` on descendants; walk up
+  // to the nearest explicit ancestor choice instead of stopping at that value.
+  const explicitSchemes = styles.map(style => style.colorScheme).filter(value => value && value !== 'normal');
+  const scheme = explicitSchemes.find(value => value.includes('dark')) || explicitSchemes[0]
+    || win.getComputedStyle(element.ownerDocument.documentElement).colorScheme;
+  const darkCanvas = element.ownerDocument.body.classList.contains('dark') || scheme === 'dark'
+    || !!scheme?.includes('dark') && !!win.matchMedia?.('(prefers-color-scheme: dark)').matches;
   let surface: RGB = darkCanvas ? [24, 24, 24] : [255, 255, 255];
   for (const style of styles.reverse()) {
     const color = parseColor(style.backgroundColor);

@@ -86,6 +86,12 @@ export class PageController {
   private refreshPalette = () => { this.queuePalettes(this.doc.documentElement); };
   constructor(private doc: Document = document) {}
 
+  private setUiCorners(host?: HTMLElement): void {
+    const radius = this.settings.roundedCorners ? '12px' : '0px';
+    const targets = host ? [host] : [...this.doc.querySelectorAll<HTMLElement>('[data-textheat-extension="ui"]')];
+    for (const target of targets) target.style.setProperty('--textheat-corner-radius', radius);
+  }
+
   state(): PageState { return { mode: this.settings.mode, pageEnabled: this.active, picking: this.picking, highlights: this.doc.querySelectorAll('[data-textheat-extension="highlight"]').length, processed: this.processedCount }; }
   configure(value: ExtensionSettings): void {
     const wasActive = this.active && this.settings.mode === 'manual';
@@ -168,9 +174,10 @@ export class PageController {
     }
   }
   private updatePresentation(): void {
+    this.setUiCorners();
     for (const wrapper of this.doc.querySelectorAll(marker)) {
       if (this.isComposing(wrapper)) continue;
-      recolorHighlights(wrapper, getTheme(extensionTheme(this.settings, wrapper.parentElement ?? undefined)));
+      recolorHighlights(wrapper, getTheme(extensionTheme(this.settings, wrapper.parentElement ?? undefined)), this.settings.roundedCorners);
       updateTooltips(wrapper, this.settings.showTooltips);
       if (!this.settings.animate || this.reducedMotion()) {
         for (const span of wrapper.querySelectorAll<HTMLElement>('[data-textheat-extension="highlight"]')) {
@@ -290,7 +297,7 @@ export class PageController {
     }
     const palette = getTheme(extensionTheme(this.settings, element));
     if (this.settings.theme === 'adaptive') {
-      for (const child of element.children) if (child.matches(marker)) recolorHighlights(child, palette);
+      for (const child of element.children) if (child.matches(marker)) recolorHighlights(child, palette, this.settings.roundedCorners);
     }
     // Only direct text children: never duplicate traversal/analysis of a giant container.
     for (const child of [...element.childNodes]) {
@@ -414,6 +421,7 @@ export class PageController {
     this.doc.addEventListener('click', this.pickClick, true);
     this.doc.addEventListener('keydown', this.escapePick);
     const hint = this.doc.createElement('div'); hint.dataset.textheatExtension = 'ui'; hint.className = 'textheat-extension-pick-hint';
+    this.setUiCorners(hint);
     hint.textContent = 'textheat: click readable text to check it · Escape to cancel · links and forms remain interactive';
     this.doc.body.append(hint); this.pickHint = hint;
   }
@@ -471,9 +479,10 @@ export class PageController {
     this.closePanel();
     this.previousFocus = this.doc.activeElement instanceof this.doc.defaultView!.HTMLElement ? this.doc.activeElement as HTMLElement : undefined;
     const host = this.doc.createElement('div'); host.dataset.textheatExtension = 'ui'; host.className = 'textheat-extension-panel';
+    this.setUiCorners(host);
     const shadow = host.attachShadow({ mode: 'open' });
     const style = this.doc.createElement('style');
-    style.textContent = ':host{all:initial;position:fixed;z-index:2147483647;right:16px;bottom:16px;width:min(380px,calc(100vw - 32px));font:14px/1.6 system-ui;color:#252823}section{background:#fff;border:1px solid #ddd;border-radius:12px;padding:18px;box-shadow:0 8px 36px #0003;max-height:65vh;overflow:auto}header{display:flex;justify-content:space-between;align-items:center}button{background:#f2f2ec;border:1px solid #ddd;border-radius:6px;cursor:pointer;padding:4px 8px}p{overflow-wrap:anywhere;white-space:pre-wrap}small{color:#666}h2{font-size:16px;margin:0}button:focus-visible{outline:2px solid #c45b3e}';
+    style.textContent = `:host{all:initial;position:fixed;z-index:2147483647;right:16px;bottom:16px;width:min(380px,calc(100vw - 32px));font:14px/1.6 system-ui,sans-serif;color:#1c1917;color-scheme:light}section{background:#fff;border:1px solid #e7e2d8;padding:18px;box-shadow:6px 6px 0 #f1efe9;max-height:65vh;overflow:auto;border-radius:var(--textheat-corner-radius,0px)}header{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #e7e2d8;padding-bottom:10px;margin-bottom:10px}button{background:#f1efe9;color:#1c1917;border:1px solid #e7e2d8;cursor:pointer;padding:5px 9px;font:600 12px system-ui,sans-serif;border-radius:var(--textheat-corner-radius,0px)}p{overflow-wrap:anywhere;white-space:pre-wrap}small{color:#57534e}h2{font-size:16px;line-height:1.3;margin:0;font-weight:750}button:focus-visible{outline:3px solid #ad482e;outline-offset:3px}@media(prefers-color-scheme:dark){:host{color:#ece7df;color-scheme:dark}section{background:#171412;border-color:#2a2521;box-shadow:6px 6px 0 #161311}header{border-color:#2a2521}button{background:#161311;color:#ece7df;border-color:#2a2521}small{color:#a8a29e}button:focus-visible{outline-color:#e8896b}}`;
     const section = this.doc.createElement('section'); section.setAttribute('role', 'dialog'); section.setAttribute('aria-label', 'textheat text analysis');
     const header = this.doc.createElement('header'); const title = this.doc.createElement('h2'); title.textContent = 'textheat · selected text';
     const close = this.doc.createElement('button'); close.textContent = 'Close'; close.addEventListener('click', () => this.closePanel()); header.append(title, close);

@@ -60,5 +60,6 @@ export function connectEditor(input: HTMLTextAreaElement, output: HTMLElement): 
     leave(); input.removeEventListener('scroll', syncScroll);
     input.removeEventListener('pointermove', hover); input.removeEventListener('pointerleave', leave);
     input.removeEventListener('input', leave); input.removeEventListener('keydown', leave); input.removeEventListener('pointerdown', leave);
+    input.removeAttribute('aria-busy');
   } };
 }

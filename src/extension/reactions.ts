@@ -1,5 +1,5 @@
 /** Decorative reactions live only in an inert shadow overlay, never in source text. */
-export interface ReactionSettings { emojiReactions?: boolean; animate: boolean }
+export interface ReactionSettings { emojiReactions?: boolean; animate: boolean; roundedCorners?: boolean }
 const highlightSelector = '[data-textheat-extension="highlight"]';
 const MAX_ANCHORS = 128, MAX_PENDING = 128, MAX_BURSTS = 8, PARTICLES = 4, DURATION = 1600;
 
@@ -209,7 +209,7 @@ export class ReactionManager {
         * { box-sizing:border-box; pointer-events:none!important; user-select:none!important; }
         .anchor { position:absolute; width:0; height:0; }
         .badge,.particle { position:absolute; font:16px/1 system-ui,"Apple Color Emoji","Segoe UI Emoji",sans-serif; }
-        .badge { transform:translate(-50%,-25%); padding:2px; border-radius:50%; background:var(--reaction-bg,transparent); color:var(--reaction-fg,inherit); }
+        .badge { transform:translate(-50%,-25%); padding:2px; border-radius:var(--reaction-radius,0px); background:var(--reaction-bg,transparent); color:var(--reaction-fg,inherit); }
         .particle { will-change:transform,opacity; }
         [hidden] { display:none!important; }
         @media(prefers-reduced-motion:reduce) { .particle { display:none!important; } }`;
@@ -233,10 +233,11 @@ export class ReactionManager {
   }
   private position(anchor: Anchor): void {
     const rect = anchor.span.getBoundingClientRect();
-    anchor.layer.style.left = `${Math.max(12, Math.min(this.win.innerWidth - 12, rect.right + 4))}px`;
+    anchor.layer.style.left = `${Math.max(12, Math.min(this.win.innerWidth - 12, rect.right))}px`;
     anchor.layer.style.top = `${Math.max(12, Math.min(this.win.innerHeight - 12, rect.top - 8))}px`;
-    anchor.badge.style.setProperty('--reaction-bg', anchor.span.style.getPropertyValue('--textheat-bg'));
+    anchor.badge.style.setProperty('--reaction-bg', this.decorativeTarget ? 'transparent' : anchor.span.style.getPropertyValue('--textheat-bg'));
     anchor.badge.style.setProperty('--reaction-fg', anchor.span.style.getPropertyValue('--textheat-fg'));
+    anchor.badge.style.setProperty('--reaction-radius', this.settings.roundedCorners ? '50%' : '0px');
     anchor.badge.textContent = reactionEmoji(anchor.span);
   }
   private settle(anchor: Anchor): void {

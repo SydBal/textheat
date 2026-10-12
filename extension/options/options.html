@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>textheat — Settings</title>
+  <link rel="stylesheet" href="options.css">
+  <script src="options.js" defer></script>
+</head>
+<body>
+  <div class="shell">
+    <header><span class="brand-mark" aria-hidden="true">th</span><div><p class="eyebrow">TEXTHEAT / SETTINGS</p><h1>Make room for feeling.</h1><p>Subtle highlights. Your reading rhythm.</p></div></header>
+    <main>
+      <form id="settings-form">
+        <fieldset id="settings-controls" disabled>
+          <section class="card" aria-labelledby="reading-title">
+            <h2 id="reading-title">Your reading mode</h2><p class="description">Start quietly, let highlights emerge, or check only what you choose.</p>
+            <fieldset class="mode-field"><legend class="sr-only">Global reading mode</legend><div class="modes">
+              <label><input name="mode" type="radio" value="off" checked><span><strong>Off</strong><small>No text processing</small></span></label>
+              <label><input name="mode" type="radio" value="auto"><span><strong>Auto</strong><small>Reveal as you read</small></span></label>
+              <label><input name="mode" type="radio" value="manual"><span><strong>Manual</strong><small>Choose a tool or shortcut</small></span></label>
+            </div></fieldset>
+            <p id="permission-status" class="note">Checking website access…</p>
+            <p class="note">To grant Auto website access, open the toolbar popup and select Auto. Manage or revoke access in your browser’s extension details. Off removes highlights but does not revoke access.</p>
+          </section>
+          <section class="card" aria-labelledby="appearance-title">
+            <h2 id="appearance-title">A highlight that feels right</h2>
+            <label class="range-title" for="threshold">Highlight sensitivity <output id="threshold-value" for="threshold">0.30</output></label>
+            <input id="threshold" type="range" min="0" max="1" step="0.01" value="0.3" aria-describedby="threshold-help">
+            <div id="threshold-help" class="range-labels"><span>More highlights</span><span>Only the strongest language</span></div>
+            <div class="field"><label for="theme">Color theme</label><select id="theme"><option value="adaptive">Adaptive — match the page</option><option value="default">Default</option><option value="dark">Dark</option><option value="high-contrast">High contrast</option><option value="custom">Custom</option></select></div>
+            <div id="custom-editor" hidden>
+              <label for="customTheme">Custom colors (JSON)</label>
+              <p id="custom-help" class="note">Use category names positive, negative, joy, anger, sadness, fear, surprise, neutral, or uncertain. Example: {"positive":{"background":"#d1fae5","color":"#065f46"}}. Omitted categories keep their standard colors.</p>
+              <textarea id="customTheme" rows="8" spellcheck="false" aria-describedby="custom-help custom-status"></textarea>
+              <p id="custom-status" class="note" role="status" aria-live="polite"></p>
+              <div id="palette-preview" class="palette" aria-label="Custom color preview"></div>
+            </div>
+            <label class="check"><input id="animate" type="checkbox" checked><span>Animate highlights<small>A soft reveal, without moving the page.</small></span></label>
+            <label class="check"><input id="showTooltips" type="checkbox"><span>Show explanations on hover<small>Explore the local analyzer’s evidence.</small></span></label>
+            <label class="check"><input id="respectReducedMotion" type="checkbox" checked><span>Respect reduced motion<small>Follow your operating system’s motion preference.</small></span></label>
+          </section>
+          <section class="card" aria-labelledby="advanced-title">
+            <h2 id="advanced-title">Fine-tune the experience</h2>
+            <label class="check"><input id="processCode" type="checkbox"><span>Include code blocks<small>Off by default. Editable fields are always excluded.</small></span></label>
+            <div class="field"><label for="preloadPx">Preload distance <small>Pixels ahead of the viewport · 0–1000</small></label><input id="preloadPx" type="number" min="0" max="1000" step="1" value="300" required></div>
+            <label class="check"><input id="debug" type="checkbox"><span>Local debug logging<small>For troubleshooting in developer tools. Nothing is uploaded.</small></span></label>
+          </section>
+          <div class="save-bar"><p>Changes apply to accessible open pages.</p><button class="primary" type="submit">Save preferences</button></div>
+        </fieldset>
+      </form>
+      <section class="card" aria-labelledby="sites-title">
+        <h2 id="sites-title">Site preferences</h2><p class="description">Overrides apply to this exact hostname, not its subdomains. A site can be disabled even when Auto is on.</p>
+        <form id="site-form"><fieldset id="site-controls" disabled>
+          <div class="site-fields"><div><label for="site-hostname">Hostname</label><input id="site-hostname" type="text" placeholder="example.com" autocomplete="off" required></div><div><label for="site-threshold">Threshold (optional)</label><input id="site-threshold" type="number" min="0" max="1" step="0.01" placeholder="Global default"></div></div>
+          <div class="site-submit"><label class="check"><input id="site-enabled" type="checkbox" checked>Enabled on this site</label><button type="submit" class="secondary">Save site</button></div>
+        </fieldset></form>
+        <div id="site-list" class="site-list" aria-label="Saved site overrides"></div>
+        <p class="note">Reset restores the global sensitivity and enables the site; it does not change the global mode.</p>
+      </section>
+      <p id="feedback" class="feedback" role="status" aria-live="polite">Loading preferences…</p>
+      <aside class="privacy"><h2>Private by design.</h2><p>Analysis runs locally in your browser. No telemetry, page text, visited URLs, or analysis results are sent to a server. Preferences and explicitly saved site hostnames stay in this browser’s local extension storage and do not sync with your browser account.</p><p>Manual shortcuts are available only in Manual mode. Configure them in your browser’s Extensions → Keyboard shortcuts.</p></aside>
+    </main>
+    <footer>textheat · Read the feeling.</footer>
+  </div>
+</body>
+</html>

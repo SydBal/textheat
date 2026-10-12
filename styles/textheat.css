@@ -1,0 +1,20 @@
+.textheat-highlight { padding: .08em .15em; border-radius: 3px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+.textheat-positive { background: #D1FAE5; color: #065F46; }
+.textheat-negative { background: #FEE2E2; color: #991B1B; }
+.textheat-joy { background: #FEF3C7; color: #92400E; }
+.textheat-anger { background: #FFEDD5; color: #9A3412; }
+.textheat-sadness { background: #DBEAFE; color: #1E40AF; }
+.textheat-fear { background: #EDE9FE; color: #5B21B6; }
+.textheat-surprise { background: #CFFAFE; color: #155E75; }
+.textheat-highlight[data-textheat-tooltip] { position: relative; cursor: help; }
+.textheat-highlight:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+.textheat-highlight[data-textheat-tooltip]:is(:hover, :focus)::after {
+  content: attr(data-textheat-tooltip); position: absolute; z-index: 10;
+  top: calc(100% + 8px); left: 0; width: min(260px, 70vw); padding: 10px 12px;
+  background: #172033; color: #fff; border-radius: 8px; box-shadow: 0 6px 22px #0003;
+  font: 12px/1.5 system-ui, sans-serif; white-space: normal; text-align: left;
+}
+.textheat-enhanced .textheat-highlight[data-textheat-tooltip]::after { display: none; }
+.textheat-tooltip-popup { position: fixed; z-index: 1000; width: min(280px, calc(100vw - 32px)); padding: 12px; background: #172033; color: white; border-radius: 10px; box-shadow: 0 8px 28px #0003; font: 12px/1.5 system-ui, sans-serif; }
+.textheat-tooltip-popup[hidden] { display: none; }
+@media (prefers-reduced-motion: no-preference) { .textheat-highlight { transition: background-color .15s; } }

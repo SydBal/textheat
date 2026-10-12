@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Explore the emotion in your words with textheat, a private local text highlighting engine.">
+  <meta name="theme-color" content="#faf9f6">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="textheat — Give words a little color.">
+  <meta property="og:description" content="A local-first English sentiment playground and downloadable Chrome extension. No remote analysis. No collected text.">
+  <meta property="og:image" content="__TEXTHEAT_SOCIAL_IMAGE__">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="textheat: Give words a little color. Local-first sentiment highlighting and a Chrome extension.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="textheat — Give words a little color.">
+  <meta name="twitter:description" content="Read the feeling. Keep your words private. Try the playground or download the local-first Chrome extension.">
+  <meta name="twitter:image" content="__TEXTHEAT_SOCIAL_IMAGE__">
+  <meta name="twitter:image:alt" content="textheat: Give words a little color. Local-first sentiment highlighting and a Chrome extension.">
+  <!-- TEXTHEAT_SITE_META -->
+  <title>textheat — Give words a little color.</title>
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <div class="page">
+    <header class="topbar">
+      <a class="brand" href="./" aria-label="textheat home"><span class="brand-icon">t<span>°</span></span>textheat<span class="version">LOCAL / V0.1</span></a>
+      <nav aria-label="Main"><a href="#extension-download">Extension</a><a href="#privacy">Privacy</a><a href="#how-it-works">How it works <span>↗</span></a><button id="theme-toggle" class="icon-button" aria-label="Switch to dark theme">☾</button></nav>
+    </header>
+    <main>
+      <section class="hero">
+        <div class="eyebrow"><span class="status-dot"></span> SMALL ENGINE. FEELING WORDS.</div>
+        <h1 id="hero-title" aria-label="Give emotional words a little color."><span class="hero-title-line" aria-hidden="true">Give <span id="hero-emotion" class="hero-emotion" style="background-color:#fdf5d9;color:#92400e"><span class="hero-emotion-text">happy</span></span> words</span><span class="hero-title-line" aria-hidden="true">a little <span class="color-word">color.<svg viewBox="0 0 210 14" aria-hidden="true"><path d="M3 10 Q100 -2 206 8"/></svg></span></span></h1>
+        <p>A little clarity for the things we say. Find the feeling in your<br class="desktop-break"> text with a fast, private, self-contained highlighting engine.</p>
+        <div class="hero-badges"><span>◈ No remote APIs</span><span>⌁ No required models</span><span>↯ Runs right here</span></div>
+        <div class="hero-actions">
+          <a class="download-button" href="./downloads/textheat-chrome.zip" download="textheat-chrome.zip">Download for Chrome <span aria-hidden="true">↓</span></a>
+          <a class="info-button" href="#extension-download">More info <span aria-hidden="true">↓</span></a>
+        </div>
+      </section>
+      <section class="workspace" aria-label="Interactive sentiment playground">
+        <div class="workspace-heading"><div><span class="small-label">THE PLAYGROUND</span><h2>Your words, under a new light.</h2></div><span class="live-label"><span class="status-dot"></span> LIVE ANALYSIS</span></div>
+        <div class="editor-panel">
+          <div class="panel-heading"><label for="input">Your text <span>Type to see the feeling.</span></label><div class="editor-meta"><span id="char-count">0 characters</span><span id="sentiment-label" class="sentiment-badge">Mixed</span></div></div>
+          <div class="live-editor">
+            <div id="output" class="editor-highlights" aria-hidden="true"></div>
+            <textarea id="input" class="editor-input" spellcheck="false" aria-describedby="input-hint" placeholder="A little feeling starts with a few words…">I love the interface, but the app crashes constantly. The new design is absolutely beautiful, and I'm excited to see what comes next.</textarea>
+          </div>
+          <div class="panel-footer"><span id="input-hint">Edit right here. Everything stays in your browser.</span><button id="clear" aria-label="Clear text">Clear ↗</button></div>
+          <div class="panel-footer editor-status"><span id="result-summary" role="status" aria-live="polite"></span><span class="local-note">◈ Analyzed locally</span></div>
+        </div>
+        <div class="controls">
+          <div class="threshold-control"><label for="threshold">Highlight strength <output id="threshold-value" for="threshold">0.30</output></label><div class="slider-row"><span>More nuance</span><input id="threshold" type="range" min="0" max="1" step="0.05" value="0.3"><span>Only the strongest</span></div></div>
+          <label class="toggle-control" for="tooltips"><span><strong>A little more context</strong><small>Hover highlights; full evidence below</small></span><input id="tooltips" type="checkbox" checked><span class="switch" aria-hidden="true"></span></label>
+        </div>
+      </section>
+      <section class="legend" aria-label="Highlight color legend"><span class="small-label">THE PALETTE</span><div><span class="legend-item positive">Positive</span><span class="legend-item negative">Negative</span><span class="legend-item joy">Joy</span><span class="legend-item anger">Anger</span><span class="legend-item sadness">Sadness</span><span class="legend-item fear">Fear</span><span class="legend-item surprise">Surprise</span></div></section>
+      <section class="examples" aria-label="Example sentences"><span class="small-label">TRY A DIFFERENT FEELING</span><div class="example-buttons"><button data-example="positive"><span class="example-dot positive"></span>A little love <span>↗</span></button><button data-example="negative"><span class="example-dot negative"></span>A rough day <span>↗</span></button><button data-example="mixed"><span class="example-dot mixed"></span>Mixed feelings <span>↗</span></button><button data-example="negation"><span class="example-dot negation"></span>Not so simple <span>↗</span></button><button data-example="neutral"><span class="example-dot neutral"></span>Just the facts <span>↗</span></button><button data-example="context">Deeper context <span>↗</span></button></div></section>
+      <section class="analysis-insights" aria-label="Deeper analysis">
+        <div class="insights-heading"><div><span class="small-label">BEYOND THE HIGHLIGHTS</span><h2>Context, clauses &amp; what the feeling is about.</h2></div><span class="method-label">FAST LOCAL RULES</span></div>
+        <div class="insight-grid"><div><h3>Aspects <small>Heuristic noun-phrase attribution</small></h3><ul id="aspects"></ul></div><div><h3>Clause-by-clause <small>Includes evidence below the highlight threshold</small></h3><ul id="clauses"></ul></div></div>
+        <p id="attribution-status" class="native-disclosure" role="status" aria-live="polite"></p>
+        <details class="evidence-details"><summary>Why was this phrase highlighted—or omitted?</summary><ul id="evidence"></ul></details>
+        <p id="ambiguity" class="ambiguity-note" hidden></p>
+        <div class="native-controls"><div><strong>Optional browser-native second opinion</strong><p id="native-status" role="status">Checking on-device model availability…</p><label><input id="native-auto" type="checkbox" disabled> Enhance ambiguous text automatically when the model is ready</label></div><button id="native-analyze" disabled>Analyze with native model</button></div>
+        <p class="native-disclosure">Never calls a remote inference service. A browser-managed model download may be required and is only requested by clicking the download button. Model opinions stay separate from the local evidence and are not calibrated confidence.</p>
+        <div id="native-assessment" class="native-assessment" hidden></div>
+      </section>
+      <section class="details" id="how-it-works"><div><span class="small-label">THOUGHTFULLY SIMPLE</span><h2>No black box.<br>Just a useful baseline.</h2><p>An expanded English rule-based lexicon, multiword matching, and explicit context rules—not a trained sentiment classifier. Every highlight starts with recognizable lexical evidence.</p></div><div class="code-card"><div><span class="code-dot"></span><span class="code-dot"></span><span class="code-dot"></span><span>YOUR NEXT PROJECT</span></div><pre><code><span class="code-keyword">import</span> text <span class="code-keyword">from</span> <span class="code-string">"textheat"</span>;
+
+text.<span class="code-method">heat</span>(<span class="code-string">"I love what you're building."</span>);
+
+<span class="code-comment">// A string in. Safe, colorful HTML out.</span>
+<span class="code-comment">// No setup. No service. No surprises.</span></code></pre></div></section>
+      <section class="algorithm-section" aria-labelledby="algorithm-title">
+        <div class="section-intro"><span class="small-label">FROM WORDS TO COLOR</span><h2 id="algorithm-title">Small rules. Visible reasoning.</h2><p>A transparent baseline, not a claim to understand everything you mean.</p></div>
+        <ol class="algorithm-grid">
+          <li><span class="step-number">01 / RECOGNIZE</span><h3>Words, and the words around them.</h3><p>The original English dictionary contains <strong><span data-lexicon-stat="entries">5,642</span> entries</strong>: <strong><span data-lexicon-stat="words">1,637</span> words</strong> and <strong><span data-lexicon-stat="phrases">4,005</span> multiword phrases</strong>. Longest-match lookup considers up to <strong><span data-lexicon-stat="maxPhraseWords">12</span> words</strong>, preserving exact source text without overlapping fragments. Coverage includes everyday feelings, product and service reviews, technology, travel, food, education, and cooperation.</p><p>Vocabulary and constrained review-phrase templates are authored locally, not imported from a training corpus. More entries mean more recognizable wording—not measured accuracy or full language understanding.</p></li>
+          <li><span class="step-number">02 / ADJUST</span><h3>Context changes the signal.</h3><p>Negation looks back up to <strong>8 tokens</strong> within bounded context and multiplies the score by <strong>−0.7</strong>. “Not just good” and “no doubt helpful” are exceptions, not ordinary reversals. Explicit absence of listed negatives (“free of bugs”) becomes positive; lack of support or reliability becomes negative, also scaled by −0.7.</p><p>“More reliable” scales a listed positive quality by <strong>1.15</strong>; “less useful” by <strong>0.65</strong>. Conditional/modal cues and narrow “too … to …” or negated “… enough” frames signal uncertainty rather than inventing the opposite meaning. Shared predicates can explain up to three explicit targets, such as “the interface and navigation are intuitive.”</p></li>
+          <li><span class="step-number">03 / SELECT</span><h3>Strength is not certainty.</h3><p>Importance is <code>abs(score) / 4 + emotion bonus</code>, with a <strong>0.08</strong> bonus when an emotion is present, clipped to <strong>[0, 1]</strong>. The default highlight threshold is <strong>0.30</strong>. A separate heuristic cutoff of <strong>0.50</strong> can withhold uncertain evidence; it is <strong>not a probability</strong> or calibrated confidence.</p></li>
+          <li><span class="step-number">04 / RENDER</span><h3>A palette with a purpose.</h3><p>Emotion colors take precedence over positive or negative polarity colors. The dynamic page-surface palette adapts to the surrounding page, maintaining at least <strong>4.5:1 text/background contrast</strong>. Color shows the kind of signal—not whether a statement is true.</p></li>
+        </ol>
+        <details class="reasoning-details"><summary>Explore the reasoning rules and their limits</summary><ul>
+          <li><strong>Longest phrase first.</strong> Exact phrases consume their words together. Punctuation, hyphens, and newlines break matching; phrases across separate page elements are not merged.</li>
+          <li><strong>Bounded negation.</strong> Look back up to eight tokens; punctuation, newlines, contrasts, and conjunctions restrict scope. An odd negator count reverses and softens evidence. “Not only / just / merely / simply” and “no / without doubt” do not negate the following quality.</li>
+          <li><strong>Absence and lack.</strong> “Without” or “free of / from” bugs, errors, problems, or delays reverses listed negative evidence. “Lack of” or “lacks” support or reliability reverses listed positive evidence. A separate outside negator can reverse it again; emotion is not retained after a reversal. This is not a general rule for every noun.</li>
+          <li><strong>Comparisons.</strong> Only useful, reliable, helpful, efficient, responsive, intuitive, and usable receive the less/more adjustments. “Less useful” remains weakly positive evidence; it does not prove uselessness.</li>
+          <li><strong>Uncertainty.</strong> Bounded preceding if, unless, would, could, and hedge cues reduce heuristic correctness to <strong>0.44</strong>. Questions and possible irony also trigger abstention. Listed “too [quality] to [action]” and “not [quality] enough” frames keep their lexical score but normally withhold the highlight.</li>
+          <li><strong>Opinion targets.</strong> Up to three explicit coordinated subjects, each up to three noun words, can share a copular predicate within an 18-token window. Opinion verbs prefer a nearby object (“I love the interface”). No pronoun antecedent or invisible target is invented.</li>
+          <li><strong>Transparent evidence.</strong> Expand the playground’s evidence list to see rule names, scores, omissions, and ambiguity cues. Default confidence remains null: heuristic correctness and normalized sentiment evidence are not calibrated probabilities.</li>
+        </ul></details>
+        <aside class="limitations"><h3>A useful lens. Not a verdict.</h3><p>English and rules only: unfamiliar vocabulary, sarcasm, idioms, implicit meaning, and complex targets can be missed or misread. An unhighlighted sentence is not necessarily neutral. The extension analyzes page text within individual text nodes, not a full document-wide understanding.</p><p>The <strong>website only</strong> offers an optional browser-native model opinion on supported browsers. A model download requires an explicit click; it is not part of the extension, never replaces the lexical evidence, and is not calibrated confidence.</p></aside>
+      </section>
+      <section class="privacy-section" id="privacy" aria-labelledby="privacy-title">
+        <div class="section-intro"><span class="small-label">PRIVATE BY DESIGN</span><h2 id="privacy-title">Your words aren't the product.</h2><p>Read the feeling without sending the sentence anywhere.</p></div>
+        <div class="privacy-grid"><article><span aria-hidden="true">↳</span><h3>Analysis stays here.</h3><p>The playground and extension analyze text locally. textheat does not collect, transmit, or store the text you type, select, or read.</p></article><article><span aria-hidden="true">◈</span><h3>Settings, not sentences.</h3><p>Only settings are stored locally. The extension is Off by default; website access for Auto mode is an explicit opt-in.</p></article><article><span aria-hidden="true">○</span><h3>No hidden extras.</h3><p>No external fonts, images, analytics, or trackers. The extension has no model download or remote inference. The website's optional model download is a separate, explicit choice.</p></article></div>
+        <p class="privacy-footnote">Like any hosted website, your hosting provider may receive normal page and asset requests. textheat does not attach your analyzed text to those requests.</p>
+      </section>
+      <section class="extension-banner" id="extension-download" aria-labelledby="extension-title">
+        <div class="extension-pitch">
+          <span class="small-label">YOUR BROWSER. YOUR WORDS.</span>
+          <h2 id="extension-title">Take a little color<br>with you.</h2>
+          <p>Meet the textheat Chrome extension. Highlight emotional language on the pages you choose, with fast, local-only analysis.</p>
+          <a class="download-button" href="./downloads/textheat-chrome.zip" download="textheat-chrome.zip">Download for Chrome <span aria-hidden="true">↓</span></a>
+          <p class="download-note">Free · Manifest V3 · Unpacked installation<br>Not published in the Chrome Web Store.</p>
+          <div class="extension-promises"><span>Off by default</span><span>No text collection</span><span>No remote analysis</span></div>
+        </div>
+        <div class="install-card">
+          <div class="install-heading"><span class="install-icon" aria-hidden="true">t°</span><div><strong>A minute to install.</strong><span>No account. No service.</span></div></div>
+          <ol class="install-steps">
+            <li><strong>Download &amp; unzip</strong><span>Extract the ZIP into a folder you will keep on your device.</span></li>
+            <li><strong>Open Chrome extensions</strong><span>Visit <code>chrome://extensions</code> and turn on <b>Developer mode</b>.</span></li>
+            <li><strong>Load unpacked</strong><span>Click <b>Load unpacked</b> and select the extracted folder containing the manifest.</span></li>
+            <li><strong>Choose when to highlight</strong><span>The extension starts <b>Off</b>. Use Manual tools, or opt into Auto and grant website access.</span></li>
+          </ol>
+          <p class="install-footnote">Your page text is never collected, transmitted, or stored by textheat. Only settings are stored locally.</p>
+        </div>
+      </section>
+    </main>
+    <footer><span class="brand footer-brand">textheat<span class="footer-tagline">A little signal in the sentences.</span></span><span>English lexical baseline · Heuristic, not calibrated · MIT</span></footer>
+  </div>
+  <script type="module" src="./main.ts"></script>
+</body>
+</html>

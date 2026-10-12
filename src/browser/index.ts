@@ -1,0 +1,10 @@
+import text from '../api/index';
+import { mount, update, destroy, renderDOM } from './mount';
+import { enhanceTooltips } from './tooltips';
+import { analyzeWithNative, nativeAvailability } from './native';
+import { getPageTheme } from './page-theme';
+export * from '../api/index';
+export type { NativeOptions, NativeAnalyzeOptions, NativeAnalysis, NativeAvailability, ModelAssessment } from './native';
+export { analyzeWithNative, nativeAvailability };
+export { mount, update, destroy, renderDOM, enhanceTooltips, getPageTheme };
+export default Object.freeze({ ...text, mount, update, destroy, renderDOM, enhanceTooltips, getPageTheme, analyzeWithNative, nativeAvailability });

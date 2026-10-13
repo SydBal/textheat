@@ -45,8 +45,12 @@ These checks are **not proved by mocked Chrome APIs or a development harness**. 
 
 ## Chrome Web Store submission (separate from ZIP availability)
 
-- [ ] Publish a real, stable HTTPS privacy-policy URL describing local processing, local preferences/explicit site overrides, permissions, and absence of telemetry. Repository documentation is not a substitute for the final store link.
+- [ ] Publish a real, stable HTTPS privacy-policy URL describing website-content handling (including local processing), user-facing purposes, explicitly stored hostnames/preferences, permissions, retention/sharing, and the Chrome Web Store Limited Use commitment. Repository documentation is not a substitute for the final store link.
+- [ ] Complete the dashboard's data-use disclosures accurately. Local processing can still count as handling user data for Store disclosures; assess website content, any selected/user-entered text, and explicitly saved hostnames against the dashboard's definitions. Align declarations, product behavior, listing, and policy; do not claim “no data handled” solely because processing is local.
+- [ ] Ensure an in-product disclosure appears before page text is processed, explains what is handled and why, and states the local-only behavior. Auto and Manual activation are explicit, but the disclosure must also be prominent and understandable.
 - [ ] Prepare accurate store description, screenshots of real behavior, and listing/promotion assets required by the current developer dashboard. Do not claim calibrated accuracy, universal compatibility, or browser/model capabilities not tested.
+- [ ] Create at least one current, real Chrome Web Store screenshot at the dashboard's required dimensions and any required promotional images; the website social preview is not a listing screenshot.
+	- Draft 1280×800 composed previews are in `store-listing/`; they are not live-extension captures and must not be submitted as screenshots. Replace them after testing the final ZIP in Chrome.
 - [ ] Review the dashboard's current privacy disclosures and permission justifications: storage for preferences, activeTab for explicit Manual tools, scripting for bundled processing, optional hosts for Auto. No remote hosted executable code.
 - [ ] Set the real public website URL and rebuild to emit absolute social-preview/canonical URLs. Confirm the published site's ZIP is the reviewed release.
 - [ ] Submit through an authorized developer account and complete the store review. **This repository does not publish to the store or certify acceptance.** Until accepted, the website correctly describes unpacked installation, not a store install.

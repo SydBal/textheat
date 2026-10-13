@@ -185,7 +185,7 @@ nav a:hover { color: var(--ink); background: var(--soft); }
 .hero-badges > span { background: var(--accent-soft); color: var(--accent); padding: 4px 9px; font-weight: 650; }
 .hero-emoji-toggle { border-radius: 0; box-shadow: 4px 4px 0 var(--soft); }
 .hero-actions { gap: 12px; }
-.download-button, .info-button { border-radius: 0; box-shadow: 5px 5px 0 var(--soft); font-size: 14px; font-weight: 650; }
+.download-button, .info-button { min-height: 50px; border-radius: 0; box-shadow: 5px 5px 0 var(--soft); font-size: 14px; font-weight: 650; }
 .download-button { background: var(--accent); color: var(--accent-ink); }
 .download-button:hover { background: var(--accent); filter: brightness(.92); }
 .info-button { border-color: var(--line); background: var(--paper); }
@@ -283,5 +283,16 @@ footer { display: block; padding: 0; border-top: 2px solid var(--accent); }
 .footer-credit, .footer-note { color: var(--muted); font-size: 13px; }
 .footer-credit a { color: var(--accent); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
 .footer-credit a:hover { text-decoration-thickness: 2px; }
+.policy-page { padding-block: 64px 80px; }
+.policy-content { max-width: 760px; margin: 0 auto; }
+.policy-content h1 { margin: 12px 0 8px; font: 800 clamp(38px, 7vw, 58px)/1.1 var(--font); letter-spacing: -.045em; }
+.policy-updated { color: var(--muted); font-size: 13px; }
+.policy-content > p, .policy-content li { font-size: 16px; line-height: 1.8; }
+.policy-content h2 { margin: 34px 0 8px; font-size: 22px; }
+.policy-content a:not(.info-button) { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+.policy-content ul { padding-left: 24px; }
+.policy-back { margin-top: 38px; }
 @media (max-width: 640px) {
+	.policy-page { padding-block: 40px 56px; }
+	.policy-content > p, .policy-content li { font-size: 15px; }
 }

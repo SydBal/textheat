@@ -1,4 +1,5 @@
 import { defineConfig, loadEnv } from 'vite';
+import { resolve } from 'node:path';
 
 /** Deployment URL is supplied by the operator, never guessed from a hostname. */
 export function siteMetadata(html: string, siteUrl?: string): string {
@@ -24,6 +25,12 @@ export default defineConfig(({ mode, command }) => {
 		root: 'demo',
 		base: './',
 		plugins: [{ name: 'textheat-site-metadata', transformIndexHtml: { order: 'pre', handler: (html) => siteMetadata(html, siteUrl) } }],
-		build: { outDir: '../demo-dist', emptyOutDir: true },
+		build: {
+			outDir: '../demo-dist', emptyOutDir: true,
+			rollupOptions: { input: {
+				main: resolve(process.cwd(), 'demo/index.html'),
+				privacypolicy: resolve(process.cwd(), 'demo/privacypolicy/index.html'),
+			} },
+		},
 	};
 });

@@ -69,6 +69,10 @@ afterEach(async () => {
 });
 
 describe('popup Chrome integration', () => {
+  it('discloses locally processed page text before mode selection', () => {
+    expect(document.querySelector('main > .hint')?.textContent).toContain('text on permitted pages is read');
+    expect(document.querySelector('main > .hint')?.textContent).toContain('not sent to textheat');
+  });
   it('updates actual page counts as content is added or removed, and stops when closed', async () => {
     vi.useFakeTimers();
     const mock = await popup('auto'); mock.connect();

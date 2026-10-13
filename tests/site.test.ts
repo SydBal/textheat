@@ -12,6 +12,7 @@ import { lexiconStats } from '../src/api/index';
 
 const root = process.cwd();
 const html = readFileSync(resolve(root, 'demo/index.html'), 'utf8');
+const privacyHtml = readFileSync(resolve(root, 'demo/privacypolicy/index.html'), 'utf8');
 const document = new JSDOM(html).window.document;
 const scripts = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')).scripts;
 const preparationUrl = pathToFileURL(resolve(root, 'scripts/prepare-site.mjs')).href;
@@ -21,6 +22,15 @@ const tooling = () => import(/* @vite-ignore */ preparationUrl) as Promise<{
 }>;
 
 describe('public website', () => {
+  it('publishes a linked privacy policy route with product-specific disclosures', () => {
+    const policy = new JSDOM(privacyHtml).window.document;
+    expect(document.querySelector('.footer-note a[href="./privacypolicy/"]')?.textContent).toBe('Privacy policy');
+    expect(policy.querySelector('h1')?.textContent).toBe('Privacy policy');
+    for (const phrase of ['not sent to textheat servers', 'Chrome local storage', 'browser-provided on-device language model', 'ordinary request information', 'starts Off', 'Chrome Web Store User Data Policy', 'Limited Use']) {
+      expect(policy.body.textContent).toContain(phrase);
+    }
+    expect(policy.querySelector('script[src="./theme.ts"]')).not.toBeNull();
+  });
   it('keeps the playground first, two hero actions, and the download section last above the footer', () => {
     for (const id of ['theme-toggle', 'input', 'char-count', 'clear', 'output', 'sentiment-label', 'result-summary', 'threshold', 'threshold-value', 'tooltips', 'aspects', 'clauses', 'evidence', 'attribution-status', 'ambiguity', 'native-status', 'native-auto', 'native-analyze', 'native-assessment']) {
       expect(document.querySelectorAll(`[id="${id}"]`)).toHaveLength(1);

@@ -162,6 +162,10 @@ This emphasizes the following opinion slightly; it does not recolor every word i
 
 Exclamation marks affect scoring but are not included in the emotional word's highlighted span.
 
+### Emoji
+
+A small curated set of emoji symbols is standalone evidence (`emoji-symbol` rule), scored conservatively below equivalent words. Faces and unambiguous gestures are listed; standalone heart symbols are deliberately excluded because they serve as decoration at least as often as sentiment. An emoji does not join phrases and is not negated or intensified by neighbouring words, but up to three trailing exclamation marks emphasize it exactly like lexical evidence.
+
 After adjustments, signed scores are clamped to **[-4, 4]**. Positive scores produce positive polarity, negative scores negative polarity, and zero neutral polarity.
 
 ### Scoring precedence

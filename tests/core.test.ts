@@ -96,3 +96,40 @@ describe('public API and contextual baseline', () => {
     expect(process.memoryUsage().heapUsed - before).toBeLessThan(200 * 1024 * 1024);
   });
 });
+
+describe('curated emoji evidence', () => {
+  it('scores a positive emoji in scoreSentiment and analyze', () => {
+    const prediction = scoreSentiment(tokenize('😍'))[0]!;
+    expect(prediction.text).toBe('😍');
+    expect(prediction.score).toBeGreaterThan(0);
+    expect(prediction.sentiment).toBe('positive');
+    expect(prediction.emotion).toBe('joy');
+    expect(prediction.rules).toContain('emoji-symbol');
+    const result = analyze('absolutely love it 😍');
+    expect(result.highlights.map(p => p.text)).toEqual(['absolutely love', '😍']);
+    expect(result.sentiment.label).toBe('positive');
+    expect(result.sentiment.scores.positive).toBeGreaterThan(analyze('absolutely love it').sentiment.scores.positive);
+  });
+  it('moves negative with a strong negative emoji', () => {
+    const result = analyze('The update shipped 😡');
+    const emoji = result.highlights.find(p => p.text === '😡')!;
+    expect(emoji).toBeDefined();
+    expect(emoji.score).toBeLessThan(0);
+    expect(emoji.emotion).toBe('anger');
+    expect(result.sentiment.label).toBe('negative');
+    expect(scoreSentiment(tokenize('😢'))[0]!.emotion).toBe('sadness');
+    expect(scoreSentiment(tokenize('😱'))[0]!.emotion).toBe('fear');
+  });
+  it('leaves neutral and unlisted-emoji text unchanged', () => {
+    expect(analyze('The package arrived on Tuesday and contains three books.').highlights).toEqual([]);
+    expect(scoreSentiment(tokenize('The package arrived 📦'))).toEqual([]);
+    expect(scoreSentiment(tokenize('🧡'))).toEqual([]);
+    expect(analyze('absolutely love it').highlights.map(p => p.text)).toEqual(['absolutely love']);
+  });
+  it('emphasizes an emoji with trailing exclamation marks', () => {
+    const plain = scoreSentiment(tokenize('😍'))[0]!;
+    const emphatic = scoreSentiment(tokenize('😍!'))[0]!;
+    expect(emphatic.score).toBeGreaterThan(plain.score);
+    expect(emphatic.rules).toContain('punctuation-emphasis');
+  });
+});

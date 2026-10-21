@@ -1,3 +1,5 @@
+import { emojiSentiment } from './emoji';
+import type { EmojiSentiment } from './emoji';
 import { contrasts, intensifiers, lexicon, maxPhraseWords, negators } from './lexicon';
 import { recognizeNounContext } from './noun-context';
 import type { Prediction, ScoringContext, Token } from './types';
@@ -11,6 +13,23 @@ const absentNegativeHeads = new Map([['bugs', 'buggy'], ['errors', 'error'], ['p
 const lackingPositiveHeads = new Map([['support', 'helpful'], ['reliability', 'reliability']]);
 const comparedQualities = new Set(['useful', 'reliable', 'helpful', 'efficient', 'responsive', 'intuitive', 'usable']);
 const excessQualities = new Set(['slow', 'fast', 'difficult', 'easy', 'reliable', 'useful', 'expensive', 'complicated']);
+/** A curated emoji symbol is standalone evidence: it does not join phrases and
+ * is not negated or intensified by neighbouring words, but trailing exclamation
+ * marks emphasize it exactly like lexical evidence.
+ */
+function emojiPrediction(tokens: Token[], index: number, entry: EmojiSentiment): Prediction {
+  const token = tokens[index]!;
+  const rules: string[] = ['emoji-symbol'];
+  let score = entry.score;
+  let exclamations = 0;
+  while (exclamations < 3 && tokens[index + 1 + exclamations]?.text === '!') exclamations++;
+  if (exclamations) { score *= 1 + 0.08 * exclamations; rules.push('punctuation-emphasis'); }
+  score = clamp(score, 4);
+  return { text: token.text, start: token.start, end: token.end, score,
+    sentiment: score > 0 ? 'positive' : 'negative', emotion: entry.emotion,
+    importance: 0, confidence: null, heuristicConfidence: 0.78, rules, ambiguity: [],
+    explanation: `${score > 0 ? 'Positive' : 'Negative'} emoji symbol. Rules: ${rules.join(', ')}. Heuristic English baseline, not a calibrated probability.` };
+}
 /** Bounded noun frames before lexical terms; exact phrases retain precedence.
  * Modifiers stop at punctuation and clause boundaries.
  */
@@ -22,6 +41,8 @@ export function scoreSentiment(tokens: Token[], context: ScoringContext = {}): P
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i]!;
     if (token.kind === 'punctuation') {
+      const emoji = emojiSentiment.get(token.text.replace(/\uFE0F$/u, ''));
+      if (emoji) { predictions.push(emojiPrediction(tokens, i, emoji)); continue; }
       if (/[.!?;:,\n]/u.test(token.text)) { clauseStart = i + 1; contrastWeight = 1; }
       continue;
     }

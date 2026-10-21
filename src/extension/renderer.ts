@@ -1,6 +1,6 @@
 import { analyze, getTheme } from 'textheat';
 import { getPageTheme } from 'textheat/browser';
-import type { Category, Theme, ThemeInput } from 'textheat';
+import type { Category, Prediction, Theme, ThemeInput } from 'textheat';
 import type { ExtensionSettings } from '../../extension/shared/settings';
 import { editingRoot } from './exclusions';
 
@@ -62,16 +62,23 @@ export function recolorHighlights(wrapper: Element, theme: Theme, roundedCorners
   }
 }
 export function replaceText(node: Text, settings: ExtensionSettings, palette?: Theme): { wrapper?: HTMLSpanElement; highlights: HTMLSpanElement[] } {
-  const input = node.data;
-  const analysis = analyze(input, { threshold: settings.threshold });
+  const analysis = analyze(node.data, { threshold: settings.threshold });
   if (!analysis.highlights.length) return { highlights: [] };
+  return applyHighlights(node, analysis.highlights, settings, palette);
+}
+/** Wrap precomputed highlight spans (node-local offsets) inside one text node.
+ * The controller's merged cross-node analysis renders through here too, so the
+ * DOM only ever gains the same wrapper and highlight spans replaceText makes.
+ */
+export function applyHighlights(node: Text, predictions: Prediction[], settings: ExtensionSettings, palette?: Theme): { wrapper?: HTMLSpanElement; highlights: HTMLSpanElement[] } {
+  const input = node.data;
   const doc = node.ownerDocument;
   const wrapper = doc.createElement('span');
   wrapper.dataset.textheatExtension = 'wrapper';
   const theme = palette ?? getTheme(extensionTheme(settings, node.parentElement ?? undefined));
   const highlights: HTMLSpanElement[] = [];
   let offset = 0;
-  for (const p of analysis.highlights) {
+  for (const p of predictions) {
     wrapper.append(doc.createTextNode(input.slice(offset, p.start)));
     const span = doc.createElement('span');
     span.className = `textheat-highlight textheat-${p.sentiment}${p.emotion ? ` textheat-${p.emotion}` : ''} textheat-extension-highlight`;

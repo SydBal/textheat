@@ -1,11 +1,17 @@
 import { analyze, getTheme, renderDOM } from 'textheat/browser';
+import type { Prediction } from 'textheat';
 import type { ExtensionSettings } from '../../extension/shared/settings';
 import { defaults, validateSettings } from '../../extension/shared/settings';
 import type { PageAction, PageState } from '../../extension/shared/messages';
 import { editingRoot, eligibleElement, eligibleField, eligibleText } from './exclusions';
-import { extensionTheme, marker, recolorHighlights, replaceText, restoreWrapper, updateTooltips } from './renderer';
+import { applyHighlights, extensionTheme, marker, recolorHighlights, replaceText, restoreWrapper, updateTooltips } from './renderer';
 import type { Replacement } from './renderer';
 import { ReactionManager } from './reactions';
+
+/** Block containers bound merged analysis: their text is a separate reading
+ * unit with its own job, never joined to the surrounding container's text.
+ */
+const blockLevelTags = new Set(['ADDRESS', 'ARTICLE', 'ASIDE', 'BLOCKQUOTE', 'DD', 'DIV', 'DL', 'DT', 'FIELDSET', 'FIGCAPTION', 'FIGURE', 'FOOTER', 'FORM', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HEADER', 'HR', 'LI', 'MAIN', 'NAV', 'OL', 'P', 'PRE', 'SECTION', 'TABLE', 'TBODY', 'TD', 'TFOOT', 'TH', 'THEAD', 'TR', 'UL']);
 
 /** Progressive, bounded page jobs. No page text ever leaves this document. */
 export class PageController {
@@ -299,32 +305,100 @@ export class PageController {
     if (this.settings.theme === 'adaptive') {
       for (const child of element.children) if (child.matches(marker)) recolorHighlights(child, palette, this.settings.roundedCorners);
     }
-    // Only direct text children: never duplicate traversal/analysis of a giant container.
-    for (const child of [...element.childNodes]) {
-      if (child.nodeType !== 3) continue;
-      const node = child as Text;
-      if (!eligibleText(node, this.settings) || this.processed.get(node) === node.data) continue;
-      // Huge single nodes remain unchanged instead of monopolizing the main thread.
-      if (node.data.length > 24000) { this.processed.set(node, node.data); continue; }
-      const value = node.data;
+    // Text is gathered in inline groups within this block container and
+    // analyzed as one string per group, so phrases, negation and modifiers
+    // survive inline element splits. Rendering stays per text node.
+    for (const group of this.textGroups(element)) {
+      const fresh = group.filter(node => this.processed.get(node) !== node.data);
+      if (!fresh.length) continue;
+      const mergedLength = group.reduce((sum, node) => sum + node.data.length, 0);
+      // Bounded merge: every node fresh, a bounded segment count and the same
+      // total length budget a single node already had. Anything else keeps the
+      // established per-node path, so processed nodes are never double counted.
+      if (fresh.length === group.length && group.length > 1 && group.length <= 128 && mergedLength <= 24000) {
+        this.processGroup(element, group, palette, alreadyPresented);
+      } else {
+        for (const node of group) this.processTextNode(element, node, palette, alreadyPresented);
+      }
+    }
+  }
+  /** Descendant text nodes in document order, split into groups at block-level
+   * elements (their own containers, with their own jobs) and at existing
+   * wrappers (already rendered highlights are a hard boundary).
+   */
+  private textGroups(element: Element): Text[][] {
+    const groups: Text[][] = [];
+    let current: Text[] = [];
+    const flushGroup = () => { if (current.length) { groups.push(current); current = []; } };
+    const visit = (parent: Node, depth: number): void => {
+      for (const child of parent.childNodes) {
+        if (child.nodeType === 3) { current.push(child as Text); continue; }
+        if (child.nodeType !== 1) continue;
+        const childElement = child as Element;
+        if (depth >= 100 || childElement.matches(marker) || blockLevelTags.has(childElement.tagName)) { flushGroup(); continue; }
+        visit(childElement, depth + 1);
+      }
+    };
+    visit(element, 0);
+    flushGroup();
+    return groups;
+  }
+  /** Analyze one inline group as a single string, then map each prediction
+   * back to per-node portions and render those with the usual wrapping. Only
+   * eligible nodes are rendered or marked processed; every node's text still
+   * contributes context to the merged analysis.
+   */
+  private processGroup(element: Element, group: Text[], palette: ReturnType<typeof getTheme>, alreadyPresented: boolean): void {
+    const segments: Array<{ node: Text; start: number; end: number }> = [];
+    let offset = 0;
+    for (const node of group) { segments.push({ node, start: offset, end: offset + node.data.length }); offset += node.data.length; }
+    const merged = group.map(node => node.data).join('');
+    let highlights: Prediction[] = [];
+    try { highlights = analyze(merged, { threshold: this.settings.threshold }).highlights; }
+    catch (error) { if (this.settings.debug) console.debug('textheat skipped group', error); return; }
+    for (const segment of segments) {
+      const node = segment.node;
+      if (!eligibleText(node, this.settings)) continue;
+      const portions: Prediction[] = [];
+      for (const prediction of highlights) {
+        const start = Math.max(prediction.start, segment.start);
+        const end = Math.min(prediction.end, segment.end);
+        if (end <= start) continue;
+        const text = merged.slice(start, end);
+        if (!text.trim()) continue;
+        portions.push({ ...prediction, text, start: start - segment.start, end: end - segment.start });
+      }
       try {
-        const replacement = replaceText(node, this.settings, palette);
-        this.processedParents.add(element);
-        this.processed.set(node, value); this.processedCount++;
-        if (!replacement.wrapper) continue;
-        this.originals.set(replacement.wrapper, { original: node, value });
-        this.generated.add(replacement.wrapper);
-        for (const child of replacement.wrapper.childNodes) this.generated.add(child);
-        for (const span of replacement.highlights) {
-          this.count++;
-          if (alreadyPresented) {
-            span.dataset.textheatAnimationState = 'visible';
-            this.reactions?.showStatic(span);
-          }
-          else if (!this.animation || this.reducedMotion() || !this.settings.animate) this.reveal(span);
-          else this.animation.observe(span);
-        }
+        const replacement = portions.length ? applyHighlights(node, portions, this.settings, palette) : { highlights: [] };
+        this.commitReplacement(element, node, node.data, replacement, alreadyPresented);
       } catch (error) { if (this.settings.debug) console.debug('textheat skipped node', error); }
+    }
+  }
+  private processTextNode(element: Element, node: Text, palette: ReturnType<typeof getTheme>, alreadyPresented: boolean): void {
+    if (!eligibleText(node, this.settings) || this.processed.get(node) === node.data) return;
+    // Huge single nodes remain unchanged instead of monopolizing the main thread.
+    if (node.data.length > 24000) { this.processed.set(node, node.data); return; }
+    const value = node.data;
+    try {
+      const replacement = replaceText(node, this.settings, palette);
+      this.commitReplacement(element, node, value, replacement, alreadyPresented);
+    } catch (error) { if (this.settings.debug) console.debug('textheat skipped node', error); }
+  }
+  private commitReplacement(element: Element, node: Text, value: string, replacement: { wrapper?: HTMLSpanElement; highlights: HTMLSpanElement[] }, alreadyPresented: boolean): void {
+    this.processedParents.add(element);
+    this.processed.set(node, value); this.processedCount++;
+    if (!replacement.wrapper) return;
+    this.originals.set(replacement.wrapper, { original: node, value });
+    this.generated.add(replacement.wrapper);
+    for (const child of replacement.wrapper.childNodes) this.generated.add(child);
+    for (const span of replacement.highlights) {
+      this.count++;
+      if (alreadyPresented) {
+        span.dataset.textheatAnimationState = 'visible';
+        this.reactions?.showStatic(span);
+      }
+      else if (!this.animation || this.reducedMotion() || !this.settings.animate) this.reveal(span);
+      else this.animation.observe(span);
     }
   }
   private reducedMotion(): boolean { return this.settings.respectReducedMotion && !!this.doc.defaultView?.matchMedia?.('(prefers-reduced-motion: reduce)').matches; }

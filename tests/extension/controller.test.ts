@@ -782,4 +782,52 @@ describe('progressive extension controller', () => {
     expect(document.querySelector('.textheat-extension-panel')!.shadowRoot!.querySelector('section > p:nth-of-type(2)')!.textContent).toBe('wonderful');
     expect(field.value).toBe('private wonderful draft');
   });
+
+  it('merges inline-split text so negation crosses an element boundary', async () => {
+    document.body.innerHTML = '<p id="split">not <em>terrible</em></p>';
+    const paragraph = document.querySelector('#split')!, emphasis = document.querySelector('em')!;
+    controller.configure({ ...defaults, mode: 'auto' }); await visible();
+    // Analyzed per node, "terrible" alone is strong negative evidence. Merged
+    // with the preceding "not", the composed span flips positive across both.
+    const spans = highlights();
+    expect(spans.map(span => span.textContent).join('')).toBe('not terrible');
+    expect(spans.every(span => span.dataset.sentiment === 'positive')).toBe(true);
+    expect(emphasis.querySelector('[data-textheat-extension="highlight"]')!.textContent).toBe('terrible');
+    expect(paragraph.textContent).toBe('not terrible');
+    controller.disable();
+    expect(paragraph.textContent).toBe('not terrible');
+    expect(document.querySelectorAll('[data-textheat-extension]')).toHaveLength(0);
+    expect(paragraph.firstChild!.textContent).toBe('not ');
+    expect(emphasis.textContent).toBe('terrible');
+  });
+  it('merges inline-split text so intensifiers and phrases cross element boundaries', async () => {
+    document.body.innerHTML = '<p>very <b>good</b> and it crashes <i>constantly</i></p>';
+    controller.configure({ ...defaults, mode: 'auto' }); await visible();
+    const spans = highlights();
+    expect(spans.map(span => span.textContent).join('|')).toContain('very |good');
+    expect(spans.map(span => span.textContent).join('')).toContain('crashes constantly');
+    expect(spans.find(span => span.textContent === 'good')!.dataset.sentiment).toBe('positive');
+    expect(document.querySelector('i [data-textheat-extension="highlight"]')).not.toBeNull();
+    controller.disable();
+    expect(document.body.textContent).toBe('very good and it crashes constantly');
+    expect(document.querySelectorAll('[data-textheat-extension]')).toHaveLength(0);
+  });
+  it('does not merge across block boundaries or into excluded subtrees', async () => {
+    document.body.innerHTML = '<div>not <p>bad</p></div><p>not <button>terrible</button></p>';
+    controller.configure({ ...defaults, mode: 'auto' }); await visible();
+    // The nested paragraph is its own block container, so the outer "not"
+    // never reaches it and "bad" stays negative there.
+    const nested = document.querySelector<HTMLElement>('div p [data-textheat-extension="highlight"]')!;
+    expect(nested.textContent).toBe('bad'); expect(nested.dataset.sentiment).toBe('negative');
+    // The button text joins the merged analysis as context (so "not terrible"
+    // composes across it) but is excluded from rendering: only the eligible
+    // "not" portion is wrapped.
+    expect(document.querySelector('button')!.children).toHaveLength(0);
+    const outer = document.querySelectorAll<HTMLElement>('body > p [data-textheat-extension="highlight"]');
+    expect([...outer].map(span => span.textContent)).toEqual(['not ']);
+    expect([...outer].every(span => span.dataset.sentiment === 'positive')).toBe(true);
+    controller.disable();
+    expect(document.body.textContent).toBe('not badnot terrible');
+    expect(document.querySelectorAll('[data-textheat-extension]')).toHaveLength(0);
+  });
 });

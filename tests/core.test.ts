@@ -133,3 +133,26 @@ describe('curated emoji evidence', () => {
     expect(emphatic.rules).toContain('punctuation-emphasis');
   });
 });
+
+describe('all-caps emphasis', () => {
+  it('emphasizes sentiment words in a short all-caps input', () => {
+    const shouted = analyze('THIS IS AMAZING!').highlights.find(p => p.text === 'AMAZING')!;
+    const spoken = analyze('this is amazing!').highlights.find(p => p.text === 'amazing')!;
+    expect(shouted).toBeDefined();
+    expect(shouted.rules).toContain('capitalization-emphasis');
+    expect(shouted.score).toBeGreaterThan(spoken.score);
+    expect(shouted.score).toBeCloseTo(spoken.score * 1.15);
+  });
+  it('keeps mixed-case capitalization emphasis unchanged', () => {
+    const prediction = analyze('This is AMAZING!').highlights[0]!;
+    expect(prediction.text).toBe('AMAZING');
+    expect(prediction.rules).toContain('capitalization-emphasis');
+    expect(analyze('This is amazing!').highlights[0]!.score).toBeLessThan(prediction.score);
+  });
+  it('does not emphasize a lone uppercase word or a long uppercase passage', () => {
+    expect(analyze('GOOD').highlights[0]!.rules).not.toContain('capitalization-emphasis');
+    expect(analyze('GOOD').highlights[0]!.score).toBeCloseTo(analyze('good').highlights[0]!.score);
+    const passage = analyze('ONE TWO THREE FOUR FIVE SIX SEVEN EIGHT NINE TEN ELEVEN GOOD');
+    expect(passage.highlights[0]!.rules).not.toContain('capitalization-emphasis');
+  });
+});

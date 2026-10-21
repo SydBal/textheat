@@ -38,6 +38,14 @@ export function scoreSentiment(tokens: Token[], context: ScoringContext = {}): P
   let clauseStart = 0;
   let contrastWeight = 1;
   const hasMixedCase = tokens.some(t => t.kind === 'word' && t.text !== t.text.toUpperCase());
+  // A lone uppercase word may be an acronym or styling, and a long uppercase
+  // passage is a format rather than emphasis. A short entirely uppercase
+  // input (two to ten cased words) is someone shouting, so it earns the same
+  // capitalization bonus as an uppercase word inside mixed-case text.
+  const casedWords = tokens.filter(t => t.kind === 'word' && /[\p{L}]/u.test(t.text));
+  const allCapsShout = casedWords.length >= 2 && casedWords.length <= 10
+    && casedWords.every(t => t.text === t.text.toUpperCase() && t.text !== t.text.toLowerCase());
+  const capitalizationContext = hasMixedCase || allCapsShout;
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i]!;
     if (token.kind === 'punctuation') {
@@ -192,7 +200,7 @@ export function scoreSentiment(tokens: Token[], context: ScoringContext = {}): P
     let exclamations = 0;
     while (exclamations < 3 && tokens[i + length + exclamations]?.text === '!') exclamations++;
     if (exclamations) { score *= 1 + 0.08 * exclamations; rules.push('punctuation-emphasis'); }
-    if (hasMixedCase && token.text.length > 1 && token.text === token.text.toUpperCase()) { score *= 1.15; rules.push('capitalization-emphasis'); }
+    if (capitalizationContext && token.text.length > 1 && token.text === token.text.toUpperCase()) { score *= 1.15; rules.push('capitalization-emphasis'); }
     const forward = tokens.slice(i + length, i + length + 10);
     const untilBoundary: Token[] = [];
     let previousEnd = endToken.end;

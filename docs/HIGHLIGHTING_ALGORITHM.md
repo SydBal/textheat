@@ -158,7 +158,7 @@ This emphasizes the following opinion slightly; it does not recolor every word i
 ### Punctuation and capitalization
 
 - Up to three immediately following exclamation marks multiply strength by $1 + 0.08n$, where $n$ is the number of marks.
-- An uppercase emotional token receives a **1.15** multiplier if there is also a non-uppercase word elsewhere in the input. An entirely uppercase input does not receive this bonus automatically.
+- An uppercase emotional token receives a **1.15** multiplier if there is also a non-uppercase word elsewhere in the input. An entirely uppercase input receives the same bonus only when it is short (two to ten cased words): a lone uppercase word may be an acronym or styling, and a long uppercase passage is a format rather than emphasis.
 
 Exclamation marks affect scoring but are not included in the emotional word's highlighted span.
 

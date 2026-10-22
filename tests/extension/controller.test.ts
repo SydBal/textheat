@@ -812,6 +812,55 @@ describe('progressive extension controller', () => {
     expect(document.body.textContent).toBe('very good and it crashes constantly');
     expect(document.querySelectorAll('[data-textheat-extension]')).toHaveLength(0);
   });
+  it('carries negation context across a sibling block boundary', async () => {
+    document.body.innerHTML = '<article><p id="first">The outlook is not</p><p id="second">terrible at all.</p></article>';
+    controller.configure({ ...defaults, mode: 'auto' }); await visible();
+    // Analyzed alone, "terrible" is strong negative evidence. The previous
+    // sibling block's trailing text is fed as analysis-only context, so the
+    // composed "not terrible" flips positive. The context itself renders
+    // nothing: the first block stays untouched and only "terrible" is wrapped.
+    const spans = highlights();
+    expect(spans).toHaveLength(1);
+    expect(spans[0]!.textContent).toBe('terrible');
+    expect(spans[0]!.dataset.sentiment).toBe('positive');
+    expect(document.querySelector('#first')!.textContent).toBe('The outlook is not');
+    expect(document.querySelector('#first [data-textheat-extension]')).toBeNull();
+    controller.disable();
+    expect(document.querySelectorAll('[data-textheat-extension]')).toHaveLength(0);
+  });
+  it('lets a sibling block negation suppress a highlight across the boundary', async () => {
+    document.body.innerHTML = '<article><p>The outlook is not</p><p>bad at all.</p></article>';
+    controller.configure({ ...defaults, mode: 'auto' }); await visible();
+    // "bad at all." alone earns a negative highlight, but composed with the
+    // previous block's "not" it scores below the threshold, so the second
+    // block renders no highlight at all.
+    expect(highlights()).toHaveLength(0);
+    controller.disable();
+  });
+  it('does not carry context into a block under a different parent', async () => {
+    document.body.innerHTML = '<article><p>The outlook is not</p></article><article><p>terrible at all.</p></article>';
+    controller.configure({ ...defaults, mode: 'auto' }); await visible();
+    // The negation lives under another parent, so it never reaches this
+    // block and "terrible" keeps its standalone negative reading.
+    const spans = highlights();
+    expect(spans).toHaveLength(1);
+    expect(spans[0]!.textContent).toBe('terrible');
+    expect(spans[0]!.dataset.sentiment).toBe('negative');
+    controller.disable();
+  });
+  it('chains context between text groups inside one container', async () => {
+    document.body.innerHTML = '<div id="host">The outlook is not <p>inner note</p> terrible at all.</div>';
+    controller.configure({ ...defaults, mode: 'auto' }); await visible();
+    // The container's own text is split into two groups by the nested block;
+    // the first group still seeds the second, so "terrible" flips positive.
+    const spans = highlights();
+    expect(spans).toHaveLength(1);
+    expect(spans[0]!.textContent).toBe('terrible');
+    expect(spans[0]!.dataset.sentiment).toBe('positive');
+    expect(document.querySelector('#host p')!.textContent).toBe('inner note');
+    controller.disable();
+    expect(document.querySelectorAll('[data-textheat-extension]')).toHaveLength(0);
+  });
   it('does not merge across block boundaries or into excluded subtrees', async () => {
     document.body.innerHTML = '<div>not <p>bad</p></div><p>not <button>terrible</button></p>';
     controller.configure({ ...defaults, mode: 'auto' }); await visible();

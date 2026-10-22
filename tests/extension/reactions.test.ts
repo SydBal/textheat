@@ -243,14 +243,34 @@ describe('isolated emoji reactions', () => {
     for (let index = 0; index < 200; index++) manager.reveal(span('joy'));
     expect(particles()).toHaveLength(32); expect(layers()).toHaveLength(128); expect(vi.getTimerCount()).toBe(8);
     expect((manager as unknown as { pending: Set<HTMLElement> }).pending.size).toBe(128);
-    for (let wave = 0; wave < 17; wave++) {
+    // Overflow past the pending cap is deferred unconsumed, not dropped.
+    expect((manager as unknown as { deferred: Set<HTMLElement> }).deferred.size).toBe(64);
+    for (let wave = 0; wave < 26; wave++) {
       await vi.advanceTimersByTimeAsync(1600);
       expect(particles().length).toBeLessThanOrEqual(32);
       expect(layers().length).toBeLessThanOrEqual(128);
     }
     expect(particles()).toHaveLength(0); expect(badges().filter(badge => !badge.hidden)).toHaveLength(128);
-    expect(HTMLElement.prototype.animate).toHaveBeenCalledTimes(136 * 5);
+    expect(HTMLElement.prototype.animate).toHaveBeenCalledTimes(200 * 5);
+    expect((manager as unknown as { deferred: Set<HTMLElement> }).deferred.size).toBe(0);
     expect(vi.getTimerCount()).toBe(0);
+  });
+  it('retries deferred overflow on later passes without another reveal', async () => {
+    const sources = Array.from({ length: 137 }, () => span('joy'));
+    sources.forEach(source => manager.reveal(source));
+    const state = manager as unknown as { pending: Set<HTMLElement>; deferred: Set<HTMLElement> };
+    expect(state.pending.size).toBe(128); expect(state.deferred.size).toBe(1);
+    expect(state.deferred.has(sources[136]!)).toBe(true);
+    // No second reveal call: burst slots free over time and scroll refreshes
+    // promote the deferred request until it bursts like any accepted request.
+    for (let wave = 0; wave < 18; wave++) {
+      await vi.advanceTimersByTimeAsync(1600);
+      document.dispatchEvent(new Event('scroll'));
+      await vi.advanceTimersByTimeAsync(16);
+    }
+    expect(state.pending.size).toBe(0); expect(state.deferred.size).toBe(0);
+    expect(HTMLElement.prototype.animate).toHaveBeenCalledTimes(137 * 5);
+    expect(particles()).toHaveLength(0); expect(vi.getTimerCount()).toBe(0);
   });
   it('drains a second wave without another reveal and preserves active/queued/new targets across appearance settings', async () => {
     const sources = Array.from({ length: 16 }, () => span('joy'));
@@ -283,16 +303,22 @@ describe('isolated emoji reactions', () => {
     document.dispatchEvent(new Event('scroll')); await vi.advanceTimersByTimeAsync(16);
     expect(particles()).toHaveLength(0); expect(HTMLElement.prototype.animate).toHaveBeenCalledTimes(5);
   });
-  it('bounds offscreen references, prunes removed requests, and does not consume rejected overflow', () => {
+  it('bounds offscreen references, prunes removed requests, and defers rejected overflow without consuming it', () => {
     const sources = Array.from({ length: 129 }, () => span('joy', 'positive', -100));
     sources.forEach(source => manager.reveal(source));
-    const pending = (manager as unknown as { pending: Set<HTMLElement> }).pending;
-    expect(pending.size).toBe(128); expect(pending.has(sources[128]!)).toBe(false);
+    const state = manager as unknown as { pending: Set<HTMLElement>; deferred: Set<HTMLElement> };
+    expect(state.pending.size).toBe(128); expect(state.pending.has(sources[128]!)).toBe(false);
+    expect(state.deferred.size).toBe(1); expect(state.deferred.has(sources[128]!)).toBe(true);
     expect(host()).toBeNull(); expect(vi.getTimerCount()).toBe(0);
-    sources[0]!.remove(); manager.prune(); expect(pending.size).toBe(127);
+    sources[0]!.remove(); manager.prune();
+    // The freed slot promotes the deferred request into pending. It is still
+    // offscreen, so nothing attaches or bursts, and it was never consumed.
+    expect(state.pending.size).toBe(128); expect(state.pending.has(sources[128]!)).toBe(true);
+    expect(state.deferred.size).toBe(0); expect(host()).toBeNull(); expect(vi.getTimerCount()).toBe(0);
     sources[128]!.getBoundingClientRect = () => rect(); manager.reveal(sources[128]!);
     expect(particles()).toHaveLength(4);
-    manager.destroy(); expect(pending.size).toBe(0); expect(host()).toBeNull(); expect(vi.getTimerCount()).toBe(0);
+    manager.destroy(); expect(state.pending.size).toBe(0); expect(state.deferred.size).toBe(0);
+    expect(host()).toBeNull(); expect(vi.getTimerCount()).toBe(0);
   });
   it('keeps an accepted request eligible when it scrolls offscreen while waiting for a slot', async () => {
     const sources = Array.from({ length: 9 }, () => span('joy'));

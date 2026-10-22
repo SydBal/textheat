@@ -1,7 +1,7 @@
 /** Decorative reactions live only in an inert shadow overlay, never in source text. */
 export interface ReactionSettings { emojiReactions?: boolean; animate: boolean; roundedCorners?: boolean }
 const highlightSelector = '[data-textheat-extension="highlight"]';
-const MAX_ANCHORS = 128, MAX_PENDING = 128, MAX_BURSTS = 8, PARTICLES = 4, DURATION = 1600;
+const MAX_ANCHORS = 128, MAX_PENDING = 128, MAX_DEFERRED = 128, MAX_BURSTS = 8, PARTICLES = 4, DURATION = 1600;
 
 export function reactionEmoji(span: HTMLElement): string {
   const emotions: Record<string, string> = { joy: '😊', anger: '😠', sadness: '😢', fear: '😰', surprise: '😮' };
@@ -24,6 +24,9 @@ export class ReactionManager {
   private anchors = new Map<HTMLElement, Anchor>();
   // FIFO requests, including offscreen reveals; overflow is rejected, not consumed.
   private pending = new Set<HTMLElement>();
+  // Overflow past the pending cap waits here, unconsumed, until a later
+  // drain (scroll/refresh or a freed slot) promotes it back into pending.
+  private deferred = new Set<HTMLElement>();
   private draining = false;
   private host?: HTMLElement;
   private shadow?: ShadowRoot;
@@ -61,7 +64,7 @@ export class ReactionManager {
     if (enabling || !settings.animate || this.motion?.matches) {
       // Waiting/animating highlights still belong to their reveal caller.
       for (const span of this.doc.querySelectorAll<HTMLElement>(this.selector)) {
-        if (!this.pending.has(span) && this.visible(span) && span.dataset.textheatAnimationState !== 'waiting' &&
+        if (!this.pending.has(span) && !this.deferred.has(span) && this.visible(span) && span.dataset.textheatAnimationState !== 'waiting' &&
           span.dataset.textheatAnimationState !== 'animating') this.once.set(span, true);
       }
     }
@@ -78,6 +81,7 @@ export class ReactionManager {
   showStatic(span: HTMLElement): void {
     if (this.destroyed) return;
     this.pending.delete(span);
+    this.deferred.delete(span);
     this.once.set(span, true);
     const existing = this.anchors.get(span);
     if (existing) this.settle(existing);
@@ -93,11 +97,12 @@ export class ReactionManager {
     if (!this.settings.emojiReactions) { this.once.set(span, true); return; }
     this.prune();
     if (this.once.has(span)) {
+      this.deferred.delete(span);
       if (this.visible(span)) this.attach(span);
       return;
     }
     if (!this.canAnimate(span)) {
-      this.pending.delete(span); this.once.set(span, true);
+      this.pending.delete(span); this.deferred.delete(span); this.once.set(span, true);
       if (this.visible(span)) {
         const anchor = this.attach(span);
         if (anchor) this.settle(anchor);
@@ -105,7 +110,15 @@ export class ReactionManager {
       this.drain();
       return;
     }
-    if (!this.pending.has(span) && this.pending.size >= MAX_PENDING) return;
+    if (!this.pending.has(span) && this.pending.size >= MAX_PENDING) {
+      // The pending queue is full: defer the request instead of dropping it,
+      // so a later scroll/refresh pass retries it once a slot frees up. The
+      // once-only flag is left untouched; only overflow past the deferral
+      // bound is rejected, still unconsumed.
+      if (!this.deferred.has(span) && this.deferred.size < MAX_DEFERRED) this.deferred.add(span);
+      return;
+    }
+    this.deferred.delete(span);
     this.pending.add(span);
     // Offscreen requests must never create an overlay host.
     if (this.visible(span)) this.attach(span);
@@ -117,11 +130,24 @@ export class ReactionManager {
       typeof this.win.requestAnimationFrame === 'function' && typeof span.animate === 'function';
   }
 
+  /** Refill pending from deferred overflow as slots free up. Requests that
+   * already ran (once set) or no longer qualify are discarded unconsumed.
+   */
+  private promoteDeferred(): void {
+    for (const span of this.deferred) {
+      if (this.pending.size >= MAX_PENDING) break;
+      this.deferred.delete(span);
+      if (this.once.has(span) || !this.eligible(span) || !reactionEmoji(span)) continue;
+      this.pending.add(span);
+    }
+  }
+
   /** Iterative drain: partial animation failures release slots without recursion. */
   private drain(): void {
     if (this.draining || this.destroyed || !this.settings.emojiReactions) return;
     this.draining = true;
     try {
+      this.promoteDeferred();
       for (const span of this.pending) {
         if (!this.eligible(span) || !reactionEmoji(span)) { this.pending.delete(span); continue; }
         if (!this.canAnimate(span)) {
@@ -179,6 +205,7 @@ export class ReactionManager {
   reset(span: HTMLElement): void {
     const anchor = this.anchors.get(span);
     this.pending.delete(span);
+    this.deferred.delete(span);
     if (anchor) { this.settle(anchor); anchor.layer.remove(); this.anchors.delete(span); }
     this.once.delete(span);
     this.prune();
@@ -269,6 +296,7 @@ export class ReactionManager {
   /** Synchronous removal pruning releases source references before another frame. */
   prune(): void {
     for (const span of this.pending) if (!this.eligible(span) || !reactionEmoji(span)) this.pending.delete(span);
+    for (const span of this.deferred) if (!this.eligible(span) || !reactionEmoji(span)) this.deferred.delete(span);
     for (const [span, anchor] of this.anchors) if (!this.visible(span)) {
       this.settle(anchor); anchor.layer.remove(); this.anchors.delete(span);
     }
@@ -310,10 +338,14 @@ export class ReactionManager {
       if (this.once.has(span) && span.dataset.textheatAnimationState !== 'waiting' && this.visible(span)) this.attach(span);
     }
   }
-  /** Deliberate static cancellation consumes accepted requests, including offscreen. */
+  /** Deliberate static cancellation consumes accepted requests, including
+   * offscreen and deferred-overflow requests, so none burst later.
+   */
   private settlePending(): void {
     for (const span of this.pending) this.once.set(span, true);
     this.pending.clear();
+    for (const span of this.deferred) this.once.set(span, true);
+    this.deferred.clear();
   }
   private clear(): void {
     this.cancelTracking();

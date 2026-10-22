@@ -13,6 +13,47 @@ import { ReactionManager } from './reactions';
  */
 const blockLevelTags = new Set(['ADDRESS', 'ARTICLE', 'ASIDE', 'BLOCKQUOTE', 'DD', 'DIV', 'DL', 'DT', 'FIELDSET', 'FIGCAPTION', 'FIGURE', 'FOOTER', 'FORM', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HEADER', 'HR', 'LI', 'MAIN', 'NAV', 'OL', 'P', 'PRE', 'SECTION', 'TABLE', 'TBODY', 'TD', 'TFOOT', 'TH', 'THEAD', 'TR', 'UL']);
 
+/** Trailing text carried from one block into the next block's analysis.
+ * The excerpt is capped and cut at a word boundary so it seeds context
+ * (a trailing negation, hypothetical, or comparison) without dominating
+ * the block that owns the analysis.
+ */
+const MAX_CONTEXT_CHARS = 200;
+function trailingContext(text: string): string {
+  let tail = text.slice(-MAX_CONTEXT_CHARS);
+  if (tail.length < text.length) {
+    const boundary = tail.indexOf(' ');
+    if (boundary > 0) tail = tail.slice(boundary + 1);
+  }
+  return tail;
+}
+/** Join carried context to a block's own text with at most one space. */
+function contextPrefix(context: string, text: string): string {
+  if (!context) return '';
+  return /\s$/.test(context) || /^\s/.test(text) ? context : `${context} `;
+}
+/** Keep only the parts of each prediction inside [from, to), re-based to
+ * offsets from `from`. Predictions from carried context that end before
+ * the range vanish; ones straddling the boundary keep their sentiment and
+ * render only their in-range portion.
+ */
+function clampPredictions(highlights: Prediction[], from: number, to: number, source: string): Prediction[] {
+  const portions: Prediction[] = [];
+  for (const prediction of highlights) {
+    let start = Math.max(prediction.start, from);
+    const end = Math.min(prediction.end, to);
+    if (end <= start) continue;
+    // A phrase spanning a boundary can claim the whitespace before its
+    // first in-range word; highlights never start with a space.
+    while (start < end && /\s/.test(source[start]!)) start++;
+    if (end <= start) continue;
+    const text = source.slice(start, end);
+    if (!text.trim()) continue;
+    portions.push({ ...prediction, text, start: start - from, end: end - from });
+  }
+  return portions;
+}
+
 /** Progressive, bounded page jobs. No page text ever leaves this document. */
 export class PageController {
   private settings: ExtensionSettings = structuredClone(defaults);
@@ -45,6 +86,7 @@ export class PageController {
   private animationFrames = new Set<number>();
   private colorScheme?: MediaQueryList;
   private composing = new Set<Element>();
+  private blockContext?: { element: Element; text: string };
   private deferredRestore = new Set<Element>();
   private deferredRebuild = new Set<Element>();
   private compositionStart = (event: CompositionEvent) => {
@@ -220,7 +262,7 @@ export class PageController {
     for (const frame of this.animationFrames) win.cancelAnimationFrame(frame);
     this.animationFrames.clear();
     this.roots = []; this.jobs = []; this.walker = undefined;
-    this.nearTargets.clear(); this.deferredRebuild.clear();
+    this.nearTargets.clear(); this.deferredRebuild.clear(); this.blockContext = undefined;
     for (const wrapper of this.doc.querySelectorAll(marker)) this.restore(wrapper, this.originals.get(wrapper));
     if (!this.composing.size) this.removeCompositionListeners();
     this.processed = new WeakMap(); this.processedParents = new WeakSet(); this.originals = new WeakMap(); this.seen = new WeakSet();
@@ -308,19 +350,45 @@ export class PageController {
     // Text is gathered in inline groups within this block container and
     // analyzed as one string per group, so phrases, negation and modifiers
     // survive inline element splits. Rendering stays per text node.
+    // The previous sibling block's trailing text also rides along as
+    // analysis-only context for the first group, and each group seeds the
+    // next, so negation split across a block boundary still composes.
+    // Carried context never renders and never crosses into another parent.
+    let context = this.blockContextFor(element);
+    let lastText = '';
     for (const group of this.textGroups(element)) {
+      const groupText = group.map(node => node.data).join('');
       const fresh = group.filter(node => this.processed.get(node) !== node.data);
-      if (!fresh.length) continue;
-      const mergedLength = group.reduce((sum, node) => sum + node.data.length, 0);
-      // Bounded merge: every node fresh, a bounded segment count and the same
-      // total length budget a single node already had. Anything else keeps the
-      // established per-node path, so processed nodes are never double counted.
-      if (fresh.length === group.length && group.length > 1 && group.length <= 128 && mergedLength <= 24000) {
-        this.processGroup(element, group, palette, alreadyPresented);
-      } else {
-        for (const node of group) this.processTextNode(element, node, palette, alreadyPresented);
+      if (fresh.length) {
+        const mergedLength = group.reduce((sum, node) => sum + node.data.length, 0);
+        // Bounded merge: every node fresh, a bounded segment count and the same
+        // total length budget a single node already had. Anything else keeps the
+        // established per-node path, so processed nodes are never double counted.
+        if (fresh.length === group.length && group.length > 1 && group.length <= 128 && mergedLength <= 24000) {
+          this.processGroup(element, group, palette, alreadyPresented, context);
+        } else {
+          let nodeContext = context;
+          for (const node of group) {
+            this.processTextNode(element, node, palette, alreadyPresented, nodeContext);
+            nodeContext = trailingContext(node.data);
+          }
+        }
       }
+      if (groupText.trim()) { context = trailingContext(groupText); lastText = groupText; }
     }
+    if (lastText) this.blockContext = { element, text: trailingContext(lastText) };
+  }
+  /** Carried context is inherited only from the immediately preceding
+   * sibling block: nested blocks, blocks under another parent, and blocks
+   * later in document order never leak context into this element. Blocks
+   * processed out of document order simply fall back to per-block analysis.
+   */
+  private blockContextFor(element: Element): string {
+    const previous = this.blockContext;
+    if (!previous || previous.element === element) return '';
+    if (previous.element.parentElement !== element.parentElement) return '';
+    // 4 is Node.DOCUMENT_POSITION_FOLLOWING: this element follows previous.
+    return previous.element.compareDocumentPosition(element) & 4 ? previous.text : '';
   }
   /** Descendant text nodes in document order, split into groups at block-level
    * elements (their own containers, with their own jobs) and at existing
@@ -346,40 +414,49 @@ export class PageController {
   /** Analyze one inline group as a single string, then map each prediction
    * back to per-node portions and render those with the usual wrapping. Only
    * eligible nodes are rendered or marked processed; every node's text still
-   * contributes context to the merged analysis.
+   * contributes context to the merged analysis. Carried context from the
+   * previous block is prepended for analysis only: segments cover just this
+   * group's nodes, so context text itself never renders.
    */
-  private processGroup(element: Element, group: Text[], palette: ReturnType<typeof getTheme>, alreadyPresented: boolean): void {
+  private processGroup(element: Element, group: Text[], palette: ReturnType<typeof getTheme>, alreadyPresented: boolean, context = ''): void {
+    const groupText = group.map(node => node.data).join('');
+    const prefix = contextPrefix(context, groupText);
     const segments: Array<{ node: Text; start: number; end: number }> = [];
-    let offset = 0;
+    let offset = prefix.length;
     for (const node of group) { segments.push({ node, start: offset, end: offset + node.data.length }); offset += node.data.length; }
-    const merged = group.map(node => node.data).join('');
+    const merged = prefix + groupText;
     let highlights: Prediction[] = [];
     try { highlights = analyze(merged, { threshold: this.settings.threshold }).highlights; }
     catch (error) { if (this.settings.debug) console.debug('textheat skipped group', error); return; }
     for (const segment of segments) {
       const node = segment.node;
       if (!eligibleText(node, this.settings)) continue;
-      const portions: Prediction[] = [];
-      for (const prediction of highlights) {
-        const start = Math.max(prediction.start, segment.start);
-        const end = Math.min(prediction.end, segment.end);
-        if (end <= start) continue;
-        const text = merged.slice(start, end);
-        if (!text.trim()) continue;
-        portions.push({ ...prediction, text, start: start - segment.start, end: end - segment.start });
-      }
+      const portions = clampPredictions(highlights, segment.start, segment.end, merged);
       try {
         const replacement = portions.length ? applyHighlights(node, portions, this.settings, palette) : { highlights: [] };
         this.commitReplacement(element, node, node.data, replacement, alreadyPresented);
       } catch (error) { if (this.settings.debug) console.debug('textheat skipped node', error); }
     }
   }
-  private processTextNode(element: Element, node: Text, palette: ReturnType<typeof getTheme>, alreadyPresented: boolean): void {
+  private processTextNode(element: Element, node: Text, palette: ReturnType<typeof getTheme>, alreadyPresented: boolean, context = ''): void {
     if (!eligibleText(node, this.settings) || this.processed.get(node) === node.data) return;
     // Huge single nodes remain unchanged instead of monopolizing the main thread.
     if (node.data.length > 24000) { this.processed.set(node, node.data); return; }
     const value = node.data;
     try {
+      if (context) {
+        // The previous block's tail is analysis-only here too: predictions
+        // are clamped to this node's own range before anything renders, so
+        // a composed phrase flips this node's sentiment without ever
+        // highlighting the context itself.
+        const prefix = contextPrefix(context, value);
+        const analyzed = prefix + value;
+        const highlights = analyze(analyzed, { threshold: this.settings.threshold }).highlights;
+        const portions = clampPredictions(highlights, prefix.length, prefix.length + value.length, analyzed);
+        const replacement = portions.length ? applyHighlights(node, portions, this.settings, palette) : { highlights: [] };
+        this.commitReplacement(element, node, value, replacement, alreadyPresented);
+        return;
+      }
       const replacement = replaceText(node, this.settings, palette);
       this.commitReplacement(element, node, value, replacement, alreadyPresented);
     } catch (error) { if (this.settings.debug) console.debug('textheat skipped node', error); }

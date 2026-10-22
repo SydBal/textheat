@@ -1,0 +1,15 @@
+{
+  "name": "textheat-browser-tests",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Real-Chromium certification harness for textheat editable regions (dev tooling, not shipped).",
+  "type": "module",
+  "scripts": {
+    "pretest": "npm --prefix .. run build:extension",
+    "test": "playwright test",
+    "install-browser": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.0"
+  }
+}

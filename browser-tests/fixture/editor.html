@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>textheat editable-region fixture</title>
+<link rel="stylesheet" href="/content.css">
+</head>
+<body>
+  <p id="plain">I love this wonderful product, but the service is terrible.</p>
+  <div id="editor" contenteditable="true"><p id="draft">I love this wonderful product, but the service is terrible.</p></div>
+  <script>
+    // Minimal chrome.* shim: just enough for the real built content bundle
+    // (extension-dist/content/content.js) to boot outside an extension.
+    // It uses only chrome.runtime.id, chrome.runtime.onMessage.addListener,
+    // and chrome.runtime.sendMessage (GET_SETTINGS). Settings start Off so
+    // tests choose the exact moment highlighting is applied.
+    window.__fixtureSettings = {
+      mode: 'off', threshold: 0.3, animate: false, showTooltips: false,
+      emojiReactions: false, roundedCorners: false, theme: 'default',
+      customTheme: {}, respectReducedMotion: false, processCode: false,
+      processEditable: true, preloadPx: 0, debug: false
+    };
+    let messageListener = null;
+    window.chrome = {
+      runtime: {
+        id: 'textheat-fixture',
+        onMessage: {
+          addListener: callback => { messageListener = callback; }
+        },
+        sendMessage: async message => {
+          if (message && message.type === 'GET_SETTINGS') {
+            return { ok: true, stored: { settings: window.__fixtureSettings, sites: {} } };
+          }
+          return { ok: false, error: 'unsupported in fixture' };
+        }
+      }
+    };
+    window.__autoSettings = (overrides = {}) => ({
+      ...window.__fixtureSettings, mode: 'auto', ...overrides
+    });
+    // Deliver an APPLY_SETTINGS message exactly as the background would.
+    window.__applySettings = settings => new Promise(resolve => {
+      window.__fixtureSettings = settings;
+      messageListener({ type: 'APPLY_SETTINGS', settings }, { id: 'textheat-fixture' }, resolve);
+    });
+    // Composition event recorder, so tests can prove a real IME composition
+    // (not just synthetic events) engaged with the page.
+    window.__compositionEvents = [];
+    for (const type of ['compositionstart', 'compositionupdate', 'compositionend']) {
+      document.addEventListener(type, event => window.__compositionEvents.push(type), true);
+    }
+  </script>
+  <script src="/content.js"></script>
+</body>
+</html>
